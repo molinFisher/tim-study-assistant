@@ -1222,6 +1222,9 @@ def knowledge_points():
     days_filter = request.args.get('days', '', type=int)
     status_filter = request.args.get('status', '')
     sort = request.args.get('sort', 'total')
+    page = request.args.get('page', 1, type=int) or 1
+    per_page = request.args.get('per_page', 20, type=int) or 20
+    per_page = max(5, min(per_page, 100))
 
     where_clauses = ["zhishidian != ''"]
     params = []
@@ -1246,6 +1249,14 @@ def knowledge_points():
     }
     order_sql = order_map.get(sort, 'total DESC')
 
+    # 总分页数（按 zhishidian 分组后的行数）
+    total_count = query_db(
+        f"SELECT COUNT(*) AS c FROM (SELECT 1 FROM mistake_records WHERE {where_sql} GROUP BY zhishidian)",
+        params, one=True)['c']
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    offset = (page - 1) * per_page
+
     kps = query_db(
         f'''SELECT zhishidian,
                   COUNT(*) as total,
@@ -1254,8 +1265,9 @@ def knowledge_points():
            FROM mistake_records
            WHERE {where_sql}
            GROUP BY zhishidian
-           ORDER BY {order_sql}''',
-        params
+           ORDER BY {order_sql}
+           LIMIT ? OFFSET ?''',
+        params + [per_page, offset]
     )
 
     resp = make_response(render_template('knowledge_points.html',
@@ -1264,6 +1276,10 @@ def knowledge_points():
         days_filter=days_filter or '',
         status_filter=status_filter,
         sort=sort,
+        page=page,
+        per_page=per_page,
+        total_count=total_count,
+        total_pages=total_pages,
         subjects=Config.get_subjects(),
         status_options=Config.STATUS_OPTIONS))
     return set_uuid_cookie(resp, g.user_uuid)

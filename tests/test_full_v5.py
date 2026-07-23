@@ -686,6 +686,33 @@ def main():
     else:
         FAIL += 1; print("  ❌ 未找到数学学科"); ERRORS.append("删除节点:无数学")
 
+    # ---------- 13. 知识点管理分页 ----------
+    section("13. 知识点管理分页（保留筛选 / 无重叠）")
+    rp1 = check_page_ok("知识点管理-第1页", "/knowledge-points?per_page=5&page=1")
+    rp2 = check("知识点管理-第2页", "GET", "/knowledge-points?per_page=5&page=2", 200)
+    if rp2.status_code == 200:
+        # 两页行（knowledge-badge）应无重叠
+        def _names(resp):
+            return re.findall(r'knowledge-badge fs-6">([^<]+)</span>', resp.text)
+        n1, n2 = _names(rp1), _names(rp2)
+        if n1 and n2 and set(n1).isdisjoint(set(n2)):
+            PASS += 1; print(f"  ✅ 分页两页无重叠（第1页 {len(n1)} 行 / 第2页 {len(n2)} 行）")
+        else:
+            FAIL += 1; print(f"  ❌ 分页两页重叠或为空: p1={n1} p2={n2}"); ERRORS.append("分页重叠")
+        # 下限钳制：per_page=1 应被钳到 5
+        rc = check("知识点管理-每页下限钳制", "GET", "/knowledge-points?per_page=1&page=1", 200)
+        if rc.status_code == 200 and len(_names(rc)) == 5:
+            PASS += 1; print("  ✅ per_page 下限钳制到 5")
+        else:
+            FAIL += 1; print(f"  ❌ 下限钳制异常: {len(_names(rc)) if rc.status_code==200 else rc.status_code}")
+            ERRORS.append("分页下限钳制异常")
+        # 筛选保留：xueke 筛选翻页链接携带参数
+        rf = check("知识点管理-筛选翻页", "GET", "/knowledge-points?xueke=数学&per_page=5&page=2", 200)
+        if rf.status_code == 200 and ('xueke=数学' in rf.text or 'xueke=%E6%95%B0%E5%AD%A6' in rf.text):
+            PASS += 1; print("  ✅ 翻页链接保留 xueke 筛选参数")
+        else:
+            FAIL += 1; print("  ❌ 筛选参数未保留"); ERRORS.append("分页筛选未保留")
+
     # ---------- 清理 ----------
     section("清理测试数据")
     cleanup()

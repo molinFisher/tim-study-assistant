@@ -355,6 +355,7 @@
             }
             if (!panel.classList.contains('d-none')
                 && !panel.contains(e.target)
+                && !ctxMenu.contains(e.target)   // 右键菜单内按钮（加同级/加下级/删除）点击不关面板
                 && e.target !== toggleBtn
                 && !toggleBtn.contains(e.target)
                 && e.target !== searchInput) {
