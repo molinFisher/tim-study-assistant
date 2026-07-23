@@ -33,6 +33,7 @@ from knowledge_tree import (
     sync_mistake_knowledge, recompute_knowledge_stats,
     get_knowledge_tree, migrate_all_knowledge,
     ensure_subject, ensure_node, normalize_name,
+    split_knowledge_entries, parse_path,
 )
 
 app = Flask(__name__)
@@ -1293,31 +1294,106 @@ def api_add_knowledge_point():
 @app.route('/api/knowledge-points/rename', methods=['POST'])
 @login_required
 def api_rename_knowledge_point():
-    """重命名知识点：批量更新所有关联错题的 zhishidian"""
+    """重命名知识点（以「叶子知识点」为操作单元，保证多知识点/带路径错题与派生树一致）。
+
+    设计要点：
+      · 以叶子名（old_name 末段，忽略可能携带的章路径）在每道错题的 zhishidian 中做
+        token 级替换，避免旧实现「整字段精确匹配」对多知识点/带路径错题静默漏改；
+      · 每道受影响错题同步调用 sync_mistake_knowledge 重建 knowledge_points 派生树与
+        mistake_knowledge 多对多关联（幂等，自动复用同名节点，碰撞安全）；
+      · 同步更新 study_plans、base_data（legacy），最后重算冗余掌握率统计。
+    """
     data = request.get_json(silent=True) or {}
-    old_name = (data.get('old_name') or '').strip()
-    new_name = (data.get('new_name') or '').strip()
+    old_name = normalize_name(data.get('old_name') or '')
+    new_name = normalize_name(data.get('new_name') or '')
     if not old_name or not new_name:
-        return jsonify({'success': False, 'message': '新旧名称不能为空'})
+        return jsonify({'success': False, 'message': '知识点名称不能为空'})
     if old_name == new_name:
-        return jsonify({'success': False, 'message': '新旧名称相同'})
+        return jsonify({'success': False, 'message': '新名称与原名称相同'})
+    if '/' in new_name or '；' in new_name or ';' in new_name:
+        return jsonify({'success': False, 'message': '名称不能包含 / 或 ; 分隔符'})
 
-    # 批量更新 mistake_records
-    cnt = execute_db(
-        "UPDATE mistake_records SET zhishidian=? WHERE zhishidian=?",
-        (new_name, old_name))
+    # 解析要改名的叶子（忽略 old_name 中可能携带的章路径）
+    if '/' in old_name:
+        chapter, leaf = old_name.rsplit('/', 1)
+    else:
+        chapter, leaf = None, old_name
 
-    # 更新 study_plans
-    execute_db(
-        "UPDATE study_plans SET zhishidian=? WHERE zhishidian=?",
-        (new_name, old_name))
+    def _rewrite_zhishidian(zhishidian):
+        """在 zhishidian 串中，将匹配 (chapter, leaf) 的知识点叶子替换为 new_name。"""
+        out = []
+        hit = False
+        for entry in split_knowledge_entries(zhishidian):
+            c, p = parse_path(entry)
+            if p == leaf and (chapter is None or c == chapter):
+                out.append((c + '/' + new_name) if c else new_name)
+                hit = True
+            else:
+                out.append(entry)
+        return ('；'.join(out), hit)
 
-    # 更新 base_data
-    execute_db(
-        "UPDATE base_data SET name=? WHERE category='knowledge_point' AND name=?",
-        (new_name, old_name))
+    # 1) 错题：逐题 token 级改写 + 重建知识点树关联
+    affected = query_db(
+        "SELECT id, xueke, zhishidian FROM mistake_records "
+        "WHERE zhishidian LIKE ? AND status != 'deleted'",
+        ('%' + leaf + '%',))
+    changed = 0
+    for m in affected:
+        new_zh, hit = _rewrite_zhishidian(m['zhishidian'])
+        if not hit:
+            continue
+        execute_db("UPDATE mistake_records SET zhishidian=? WHERE id=?", (new_zh, m['id']))
+        sync_mistake_knowledge(m['id'], m['xueke'], new_zh, g.user_uuid, replace=True)
+        changed += 1
 
-    return jsonify({'success': True, 'message': f'已将「{old_name}」重命名为「{new_name}」，更新 {cnt} 道错题', 'count': cnt})
+    # 2) 学习计划（纯字符串，token 级替换）
+    plans = query_db("SELECT id, zhishidian FROM study_plans WHERE zhishidian LIKE ?", ('%' + leaf + '%',))
+    for p in plans:
+        new_zh, hit = _rewrite_zhishidian(p['zhishidian'])
+        if hit:
+            execute_db("UPDATE study_plans SET zhishidian=? WHERE id=?", (new_zh, p['id']))
+
+    # 3) base_data（legacy）：精确名与新叶子名都尝试更新
+    execute_db("UPDATE base_data SET name=? WHERE category='knowledge_point' AND name=?", (new_name, old_name))
+    if leaf != old_name:
+        execute_db("UPDATE base_data SET name=? WHERE category='knowledge_point' AND name=?", (new_name, leaf))
+
+    # 4) 重算冗余统计（linked_count / mastery_rate 等）
+    recompute_knowledge_stats(g.user_uuid)
+
+    return jsonify({'success': True,
+                    'message': f'已将「{old_name}」重命名为「{new_name}」，更新 {changed} 道错题',
+                    'count': changed})
+
+
+@app.route('/api/knowledge-points/rename/impact', methods=['POST'])
+@login_required
+def api_rename_impact():
+    """重命名影响范围预检（dry-run）：返回将影响的错题数/计划数、解析到的叶子名、是否存在同名碰撞。"""
+    data = request.get_json(silent=True) or {}
+    old_name = normalize_name(data.get('old_name') or '')
+    new_name = normalize_name(data.get('new_name') or '')
+    if not old_name:
+        return jsonify({'success': True, 'mistake_count': 0, 'plan_count': 0, 'leaf': '', 'collision': False})
+    chapter, leaf = (old_name.rsplit('/', 1) if '/' in old_name else (None, old_name))
+
+    def _would_change(zhishidian):
+        for entry in split_knowledge_entries(zhishidian):
+            c, p = parse_path(entry)
+            if p == leaf and (chapter is None or c == chapter):
+                return True
+        return False
+
+    affected = query_db(
+        "SELECT zhishidian FROM mistake_records WHERE zhishidian LIKE ? AND status != 'deleted'",
+        ('%' + leaf + '%',))
+    mistake_count = sum(1 for m in affected if _would_change(m['zhishidian']))
+    plan_rows = query_db("SELECT zhishidian FROM study_plans WHERE zhishidian LIKE ?", ('%' + leaf + '%',))
+    plan_count = sum(1 for p in plan_rows if _would_change(p['zhishidian']))
+    collision = bool(query_db(
+        "SELECT id FROM knowledge_points WHERE level=3 AND name=?", (new_name or leaf,), one=True)) if new_name else False
+    return jsonify({'success': True, 'leaf': leaf, 'mistake_count': mistake_count,
+                    'plan_count': plan_count, 'collision': collision})
 
 
 @app.route('/api/knowledge-points/merge', methods=['POST'])

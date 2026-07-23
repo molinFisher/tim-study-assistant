@@ -438,6 +438,50 @@ def main():
             PASS += 1; print("  ✅ rename 已更新关联错题 zhishidian")
         else:
             FAIL += 1; print(f"  ❌ rename 未更新: {newz}"); ERRORS.append("rename 未更新")
+
+    # rename 修复：多知识点错题只改目标叶子，不动并列点（旧实现整字段精确匹配会静默漏改）
+    rm1 = new_question("TEST_重命名多点", xueke="英语", zhishidian="TEST_多A；其它B")
+    check("重命名-多知识点只改叶子", "POST", "/api/knowledge-points/rename", 200,
+          json_body={"old_name": "TEST_多A", "new_name": "TEST_多A2"})
+    if rm1:
+        c = db()
+        mz = c.execute("SELECT zhishidian FROM mistake_records WHERE id=?", (rm1,)).fetchone()["zhishidian"]
+        c.close()
+        if mz == "TEST_多A2；其它B":
+            PASS += 1; print("  ✅ rename 多知识点：仅叶子 TEST_多A 改，其它B 保留")
+        else:
+            FAIL += 1; print(f"  ❌ rename 多知识点异常: {mz}"); ERRORS.append("rename 多知识点漏改")
+
+    # rename 修复：带路径知识点只改末段叶子
+    rm2 = new_question("TEST_重命名路径", xueke="数学", zhishidian="函数/TEST_路径X")
+    check("重命名-带路径只改叶子", "POST", "/api/knowledge-points/rename", 200,
+          json_body={"old_name": "函数/TEST_路径X", "new_name": "TEST_路径X2"})
+    if rm2:
+        c = db()
+        pz = c.execute("SELECT zhishidian FROM mistake_records WHERE id=?", (rm2,)).fetchone()["zhishidian"]
+        c.close()
+        if pz == "函数/TEST_路径X2":
+            PASS += 1; print("  ✅ rename 带路径：仅末段叶子改，章「函数」保留")
+        else:
+            FAIL += 1; print(f"  ❌ rename 带路径异常: {pz}"); ERRORS.append("rename 带路径漏改")
+
+    # rename 影响范围预检（dry-run）
+    ri = check("重命名-影响范围预检", "POST", "/api/knowledge-points/rename/impact", 200,
+               json_body={"old_name": "TEST_多A2", "new_name": "TEST_多A3"})
+    if ri.status_code == 200:
+        j = ri.json()
+        if j.get("leaf") == "TEST_多A2" and j.get("mistake_count", 0) >= 1:
+            PASS += 1; print(f"  ✅ rename 影响预检正确 (leaf={j['leaf']}, mistakes={j['mistake_count']})")
+        else:
+            FAIL += 1; print(f"  ❌ rename 影响预检异常: {j}"); ERRORS.append("rename 影响预检异常")
+
+    # rename 输入校验：名称含分隔符应被拒（200 + success=False）
+    rb = check("重命名-含分隔符应被拒", "POST", "/api/knowledge-points/rename", 200,
+               json_body={"old_name": "TEST_路径X2", "new_name": "x/y"})
+    if rb.status_code == 200 and rb.json().get("success") is False:
+        PASS += 1; print("  ✅ rename 拒绝含 / 的分隔符名称")
+    else:
+        FAIL += 1; print(f"  ❌ rename 分隔符未拒: {rb.text[:80]}"); ERRORS.append("rename 分隔符未拒")
     # merge
     rm = new_question("TEST_合并源A", xueke="英语", zhishidian="TEST_合并A")
     new_question("TEST_合并源B", xueke="英语", zhishidian="TEST_合并B")

@@ -162,7 +162,8 @@
                 <input type="hidden" id="rename-old-name">
                 <div class="mb-3">
                     <label class="form-label fw-bold">新名称 <span class="text-danger">*</span></label>
-                    <input type="text" id="rename-new-name" class="form-control" placeholder="输入新名称">
+                    <input type="text" id="rename-new-name" class="form-control" placeholder="输入新名称" oninput="updateImpact()">
+                    <small class="text-muted d-block mt-1" id="rename-impact"></small>
                 </div>
             </div>
             <div class="modal-footer">
@@ -241,12 +242,37 @@ function addKp() {
 function renameKp(oldName) {
     document.getElementById('rename-old-name').value = oldName;
     document.getElementById('rename-new-name').value = oldName;
-    new bootstrap.Modal(document.getElementById('renameKpModal')).show();
+    var modal = new bootstrap.Modal(document.getElementById('renameKpModal'));
+    modal.show();
+    setTimeout(updateImpact, 50);  // 弹窗显示后预填影响范围
+}
+function updateImpact() {
+    var oldName = document.getElementById('rename-old-name').value;
+    var newName = document.getElementById('rename-new-name').value.trim();
+    var el = document.getElementById('rename-impact');
+    if (!newName || oldName === newName) { el.textContent = ''; return; }
+    if (/[/；;]/.test(newName)) {
+        el.innerHTML = '<span class="text-danger">名称不能包含 / 或 ; 分隔符</span>';
+        return;
+    }
+    fetch('/api/knowledge-points/rename/impact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ old_name: oldName, new_name: newName })
+    }).then(r => r.json()).then(d => {
+        if (!d.success) { el.textContent = ''; return; }
+        var msg = '将重命名知识点「' + (d.leaf || '') + '」';
+        msg += '，影响 ' + (d.mistake_count || 0) + ' 道错题';
+        if (d.plan_count) msg += '、' + d.plan_count + ' 条计划';
+        if (d.collision) msg += '（已存在同名知识点，将自动合并）';
+        el.textContent = msg;
+    });
 }
 function doRename() {
     var oldName = document.getElementById('rename-old-name').value;
     var newName = document.getElementById('rename-new-name').value.trim();
     if (!newName || oldName === newName) { alert('请输入不同的新名称'); return; }
+    if (/[/；;]/.test(newName)) { alert('名称不能包含 / 或 ; 分隔符'); return; }
     fetch('/api/knowledge-points/rename', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
