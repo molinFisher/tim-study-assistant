@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}复习记录 - Tim 学习助手{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="fw-bold mb-0"><i class="bi bi-journal-text text-primary"></i> 复习记录</h2>
+    <a href="{{ url_for('review_plan') }}" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-left"></i> 返回复习
+    </a>
+</div>
+<p class="text-muted">回顾你的每一次复习，见证进步轨迹。</p>
+
+<!-- 统计摘要 -->
+<div class="row g-3 mb-4" id="stats-cards">
+    <div class="col-6 col-md-3">
+        <div class="card text-center stat-card-clickable">
+            <div class="card-body py-3">
+                <h3 class="fw-bold text-primary mb-0">{{ total_all }}</h3>
+                <small class="text-muted">总复习次数</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="?status=correct" class="text-decoration-none">
+        <div class="card text-center stat-card-clickable">
+            <div class="card-body py-3">
+                <h3 class="fw-bold text-success mb-0">{{ correct_rate }}%</h3>
+                <small class="text-muted">正确率</small>
+            </div>
+        </div>
+        </a>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center stat-card-clickable">
+            <div class="card-body py-3">
+                <h3 class="fw-bold text-warning mb-0">{{ streak }}</h3>
+                <small class="text-muted">连续打卡（天）</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="?range=7days" class="text-decoration-none">
+        <div class="card text-center stat-card-clickable">
+            <div class="card-body py-3">
+                <h3 class="fw-bold text-info mb-0">{{ today_cnt }}</h3>
+                <small class="text-muted">今日复习</small>
+            </div>
+        </div>
+        </a>
+    </div>
+</div>
+
+<!-- 记录列表（AJAX 局部刷新） -->
+<div id="history-container">
+{% include 'review_history_list.html' %}
+</div>
+
+{% if total == 0 %}
+<div class="text-center py-5">
+    <i class="bi bi-journal-x" style="font-size: 4rem; color: #ccc;"></i>
+    <h4 class="text-muted mt-3">还没有复习记录</h4>
+    <p class="text-muted">去复习几道错题，这里就会记录你的每一次努力！</p>
+    <a href="{{ url_for('review_plan') }}" class="btn btn-primary">
+        <i class="bi bi-arrow-repeat"></i> 开始复习
+    </a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function loadHistory(page) {
+    page = page || 1;
+    var form = document.getElementById('history-filter-form');
+    var params = new URLSearchParams();
+    params.set('page', page);
+    if (form) {
+        var s = form.querySelector('[name="status"]'); if (s && s.value) params.set('status', s.value);
+        var x = form.querySelector('[name="xueke"]'); if (x && x.value) params.set('xueke', x.value);
+        var r = form.querySelector('[name="range"]'); if (r && r.value) params.set('range', r.value);
+    }
+    var container = document.getElementById('history-container');
+    container.style.opacity = '0.5';
+    fetch('/api/review/history/list?' + params.toString())
+        .then(r => r.text())
+        .then(html => {
+            container.innerHTML = html;
+            container.style.opacity = '1';
+            // 更新 URL 但不刷新页面
+            var newUrl = '/review/history?' + params.toString();
+            history.replaceState(null, '', newUrl);
+        });
+}
+
+function resetHistoryFilters() {
+    loadHistory(1);
+}
+</script>
+{% endblock %}

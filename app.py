@@ -3,7 +3,7 @@ Tim 学习助手 - Flask 应用入口
 多学科错题管理、智能复习、统计分析
 """
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, make_response, session
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import os
 import io
 import threading
@@ -469,6 +469,12 @@ def question_detail(question_id):
     if not question:
         flash('错题不存在', 'danger')
         return redirect(url_for('question_list',))
+
+    # 将 sqlite3.Row 转 dict，并预处理 LaTeX 转义（\$ → $），让 KaTeX 能渲染
+    question = dict(question)
+    for field in ('timu', 'zhengquedaan', 'xueshengdaan', 'cuowufenxi'):
+        if question.get(field):
+            question[field] = question[field].replace('\\$', '$')
 
     # 获取图片
     images = query_db(
@@ -1910,6 +1916,174 @@ def submit_review(mistake_id):
     })
 
 
+# ==================== 历史复习记录 ====================
+
+@app.route('/review/history')
+@login_required
+def review_history():
+    """历史复习记录页面"""
+    page = request.args.get('page', 1, type=int)
+    status_filter = request.args.get('status', '')
+    xueke_filter = request.args.get('xueke', '')
+    date_range = request.args.get('range', 'all')
+    per_page = 20
+
+    # 日期范围
+    date_where = ''
+    if date_range == '7days':
+        date_where = "AND rl.review_date >= date('now','-7 days')"
+    elif date_range == '30days':
+        date_where = "AND rl.review_date >= date('now','-30 days')"
+
+    # 学科筛选
+    xueke_where = ''
+    xueke_params = []
+    if xueke_filter:
+        xueke_where = 'AND mr.xueke = ?'
+        xueke_params = [xueke_filter]
+
+    # 结果筛选
+    status_where = ''
+    status_params = []
+    if status_filter in ('correct', 'incorrect', 'partial'):
+        status_where = 'AND rl.result = ?'
+        status_params = [status_filter]
+
+    base_params = [g.user_uuid] + xueke_params + status_params
+
+    # 总数
+    total = query_db(
+        f"""SELECT COUNT(*) as cnt FROM review_logs rl
+            JOIN mistake_records mr ON rl.mistake_id = mr.id
+            WHERE rl.uuid=? {date_where} {xueke_where} {status_where}""",
+        base_params, one=True
+    )['cnt']
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    offset = (page - 1) * per_page
+
+    # 分页查询
+    reviews = query_db(
+        f"""SELECT rl.*, mr.timu, mr.xueke, mr.zhishidian, mr.status as mistake_status
+            FROM review_logs rl
+            JOIN mistake_records mr ON rl.mistake_id = mr.id
+            WHERE rl.uuid=? {date_where} {xueke_where} {status_where}
+            ORDER BY rl.created_at DESC
+            LIMIT ? OFFSET ?""",
+        base_params + [per_page, offset]
+    )
+    reviews = rows_to_dicts(reviews)
+    for r in reviews:
+        r['timu_plain'] = strip_latex(r['timu'], max_len=60)
+
+    # 统计摘要
+    total_all = query_db(
+        "SELECT COUNT(*) as cnt FROM review_logs WHERE uuid=?", (g.user_uuid,), one=True
+    )['cnt']
+    correct_all = query_db(
+        "SELECT COUNT(*) as cnt FROM review_logs WHERE uuid=? AND result='correct'", (g.user_uuid,), one=True
+    )['cnt']
+    correct_rate = round(correct_all / total_all * 100, 1) if total_all > 0 else 0
+    today_cnt = query_db(
+        "SELECT COUNT(*) as cnt FROM review_logs WHERE uuid=? AND review_date=date('now')", (g.user_uuid,), one=True
+    )['cnt']
+
+    # 连续打卡天数
+    streak = 0
+    today = date.today()
+    for i in range(60):
+        check_date = (today - timedelta(days=i)).isoformat()
+        cnt = query_db(
+            "SELECT COUNT(*) as c FROM review_logs WHERE uuid=? AND review_date=?", (g.user_uuid, check_date), one=True
+        )['c']
+        if cnt > 0:
+            streak += 1
+        else:
+            if i > 0:  # 今天没复习不算断
+                break
+            streak = 0
+
+    # 按日期分组
+    from collections import defaultdict
+    grouped = defaultdict(list)
+    for r in reviews:
+        grouped[r['review_date']].append(r)
+
+    resp = make_response(render_template('review_history.html',
+        reviews=reviews, grouped=dict(grouped),
+        subjects=Config.get_subjects(),
+        page=page, total_pages=total_pages, total=total,
+        status_filter=status_filter, xueke_filter=xueke_filter,
+        date_range=date_range,
+        total_all=total_all, correct_all=correct_all,
+        correct_rate=correct_rate, today_cnt=today_cnt, streak=streak
+    ))
+    return set_uuid_cookie(resp, g.user_uuid)
+
+
+@app.route('/api/review/history/list')
+@login_required
+def api_review_history_list():
+    """AJAX 局部刷新复习记录列表"""
+    page = request.args.get('page', 1, type=int)
+    status_filter = request.args.get('status', '')
+    xueke_filter = request.args.get('xueke', '')
+    date_range = request.args.get('range', 'all')
+    per_page = 20
+
+    date_where = ''
+    if date_range == '7days':
+        date_where = "AND rl.review_date >= date('now','-7 days')"
+    elif date_range == '30days':
+        date_where = "AND rl.review_date >= date('now','-30 days')"
+
+    xueke_where = ''
+    xueke_params = []
+    if xueke_filter:
+        xueke_where = 'AND mr.xueke = ?'
+        xueke_params = [xueke_filter]
+
+    status_where = ''
+    status_params = []
+    if status_filter in ('correct', 'incorrect', 'partial'):
+        status_where = 'AND rl.result = ?'
+        status_params = [status_filter]
+
+    base_params = [g.user_uuid] + xueke_params + status_params
+
+    total = query_db(
+        f"""SELECT COUNT(*) as cnt FROM review_logs rl
+            JOIN mistake_records mr ON rl.mistake_id = mr.id
+            WHERE rl.uuid=? {date_where} {xueke_where} {status_where}""",
+        base_params, one=True
+    )['cnt']
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    offset = (page - 1) * per_page
+
+    reviews = query_db(
+        f"""SELECT rl.*, mr.timu, mr.xueke, mr.zhishidian, mr.status as mistake_status
+            FROM review_logs rl
+            JOIN mistake_records mr ON rl.mistake_id = mr.id
+            WHERE rl.uuid=? {date_where} {xueke_where} {status_where}
+            ORDER BY rl.created_at DESC
+            LIMIT ? OFFSET ?""",
+        base_params + [per_page, offset]
+    )
+    reviews = rows_to_dicts(reviews)
+    for r in reviews:
+        r['timu_plain'] = strip_latex(r['timu'], max_len=60)
+
+    from collections import defaultdict
+    grouped = defaultdict(list)
+    for r in reviews:
+        grouped[r['review_date']].append(r)
+
+    return render_template('review_history_list.html',
+        reviews=reviews, grouped=dict(grouped),
+        page=page, total_pages=total_pages, total=total,
+        status_filter=status_filter, xueke_filter=xueke_filter,
+        date_range=date_range, subjects=Config.get_subjects())
+
+
 # ==================== 统计分析 ====================
 
 @app.route('/statistics',)
@@ -2362,7 +2536,7 @@ def api_tokens_page():
     tokens = query_db(
         '''SELECT id, token_prefix, name, description, is_active,
                   rate_limit, last_used_at, created_at, expires_at
-           FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC''',
+           FROM api_tokens WHERE user_id = ? ORDER BY is_active DESC, created_at DESC''',
         (user_id,)
     )
     resp = make_response(render_template('api_tokens.html', tokens=tokens))

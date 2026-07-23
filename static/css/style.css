@@ -517,3 +517,99 @@ main {
     text-overflow: ellipsis;
     cursor: default;
 }
+
+/* ========== 复习记录时间线 ========== */
+.review-day-group {
+    position: relative;
+}
+.review-day-header {
+    position: relative;
+}
+.review-day-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #667eea;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+}
+.review-day-items {
+    border-left: 2px solid #e9ecef;
+    padding-left: 12px;
+}
+.review-record-item {
+    transition: background 0.15s;
+    border: 1px solid transparent;
+    color: inherit;
+}
+.review-record-item:hover {
+    background: #f0f4ff;
+    border-color: #dee2ff;
+}
+.review-record-title {
+    font-size: 0.9rem;
+    color: #333;
+    font-weight: 500;
+}
+.review-result-icon {
+    width: 28px;
+    text-align: center;
+}
+.stat-card-clickable {
+    transition: transform 0.15s, box-shadow 0.15s;
+    cursor: default;
+}
+a .stat-card-clickable:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,.1);
+}
+
+/* Dark mode 复习记录 */
+body.dark .review-record-item:hover {
+    background: #2a2d3a;
+    border-color: #3a3d4a;
+}
+body.dark .review-record-title {
+    color: #e0e0e0;
+}
+body.dark .review-day-dot {
+    background: #7c8cf8;
+}
+body.dark .review-day-items {
+    border-left-color: #3a3d4a;
+}
+body.dark .review-day-header .badge.bg-light {
+    background: #2a2d3a !important;
+    color: #ccc !important;
+}
+
+/* 错题列表操作按钮 */
+.action-btns {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.action-btns .btn-link {
+    text-decoration: none;
+    font-size: 1.25rem;
+    line-height: 1;
+    opacity: 0.7;
+    transition: opacity 0.15s, transform 0.1s;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.action-btns .btn-link:hover {
+    opacity: 1;
+    transform: scale(1.15);
+}
+.action-btns .btn-link.text-primary:hover { background: rgba(13,110,253,.1); border-radius: 6px; }
+.action-btns .btn-link.text-secondary:hover { background: rgba(108,117,125,.1); border-radius: 6px; }
+.action-btns .btn-link.text-danger:hover { background: rgba(220,53,69,.1); border-radius: 6px; }
+body.dark .action-btns .btn-link { opacity: 0.85; }
+body.dark .action-btns .btn-link.text-primary:hover { background: rgba(100,150,255,.2); }
+body.dark .action-btns .btn-link.text-secondary:hover { background: rgba(150,150,150,.2); }
+body.dark .action-btns .btn-link.text-danger:hover { background: rgba(255,100,100,.2); }

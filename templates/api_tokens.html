@@ -85,8 +85,10 @@
                             </tr>
                         </thead>
                         <tbody>
+                            {% set ns = namespace(idx=0) %}
                             {% for t in tokens %}
-                            <tr class="{% if not t.is_active %}table-secondary{% endif %}">
+                            {% set ns.idx = ns.idx + 1 %}
+                            <tr class="{% if not t.is_active %}table-secondary{% endif %}{% if ns.idx > 5 %} token-collapsed" style="display:none{% endif %}">
                                 <td>
                                     <strong>{{ t.name or '(未命名)' }}</strong>
                                     {% if t.description %}
@@ -128,6 +130,14 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                    {% if tokens|length > 5 %}
+                    <div class="text-center py-2">
+                        <button class="btn btn-link btn-sm text-muted" id="toggle-collapsed"
+                                onclick="toggleCollapsedTokens()">
+                            <i class="bi bi-chevron-down"></i> 展开全部（{{ tokens|length - 5 }} 条隐藏）
+                        </button>
+                    </div>
+                    {% endif %}
                 </div>
                 {% else %}
                 <div class="text-center py-5 text-muted">
@@ -178,7 +188,7 @@ Authorization: Bearer YOUR_TOKEN</code></pre>
 {% block extra_head %}
 {% endblock %}
 
-{% block extra_js %}
+{% block extra_scripts %}
 <script>
 (function() {
     const form = document.getElementById('create-token-form');
@@ -211,8 +221,12 @@ Authorization: Bearer YOUR_TOKEN</code></pre>
                 copyBtn.textContent = '复制';
                 copyBtn.className = 'btn btn-outline-secondary';
                 form.reset();
-                // 1.5秒后刷新页面显示新 token
-                setTimeout(() => location.reload(), 2000);
+                // 用户手动确认后再刷新
+                setTimeout(() => {
+                    if (confirm('Token 已生成，请确认已复制保存。点击确定刷新页面。')) {
+                        location.reload();
+                    }
+                }, 500);
             } else {
                 alert('创建失败: ' + (json.message || '未知错误'));
             }
@@ -259,6 +273,16 @@ function copyToken() {
     }).catch(() => {
         alert('复制失败，请手动复制');
     });
+}
+
+function toggleCollapsedTokens() {
+    const rows = document.querySelectorAll('.token-collapsed');
+    const btn = document.getElementById('toggle-collapsed');
+    const isHidden = rows[0]?.style.display === 'none';
+    rows.forEach(r => r.style.display = isHidden ? '' : 'none');
+    btn.innerHTML = isHidden
+        ? '<i class="bi bi-chevron-up"></i> 收起'
+        : '<i class="bi bi-chevron-down"></i> 展开全部（' + rows.length + ' 条隐藏）';
 }
 </script>
 {% endblock %}

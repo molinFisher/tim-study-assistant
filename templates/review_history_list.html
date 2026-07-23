@@ -1,0 +1,90 @@
+<!-- 筛选栏 -->
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <form id="history-filter-form" class="d-flex flex-wrap gap-2 align-items-end" onsubmit="return false">
+        <select name="status" class="form-select form-select-sm" style="width:130px" onchange="loadHistory()">
+            <option value="">全部结果</option>
+            <option value="correct" {% if status_filter=='correct' %}selected{% endif %}>✅ 正确</option>
+            <option value="incorrect" {% if status_filter=='incorrect' %}selected{% endif %}>❌ 错误</option>
+            <option value="partial" {% if status_filter=='partial' %}selected{% endif %}>⚠️ 部分正确</option>
+        </select>
+        <select name="xueke" class="form-select form-select-sm" style="width:110px" onchange="loadHistory()">
+            <option value="">全部学科</option>
+            {% for s in subjects %}
+            <option value="{{ s }}" {% if xueke_filter==s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+        <select name="range" class="form-select form-select-sm" style="width:130px" onchange="loadHistory()">
+            <option value="all" {% if date_range=='all' %}selected{% endif %}>全部时间</option>
+            <option value="7days" {% if date_range=='7days' %}selected{% endif %}>最近 7 天</option>
+            <option value="30days" {% if date_range=='30days' %}selected{% endif %}>最近 30 天</option>
+        </select>
+        {% if status_filter or xueke_filter or (date_range and date_range != 'all') %}
+        <a href="javascript:resetHistoryFilters()" class="btn btn-outline-secondary btn-sm">重置</a>
+        {% endif %}
+    </form>
+    <small class="text-muted">共 {{ total }} 条记录</small>
+</div>
+
+<!-- 时间线 -->
+{% if grouped %}
+{% for date_str, day_reviews in grouped.items() %}
+<div class="review-day-group mb-4">
+    <div class="review-day-header d-flex align-items-center mb-2">
+        <div class="review-day-dot"></div>
+        <h6 class="mb-0 ms-2 fw-bold">{{ date_str }}</h6>
+        <span class="badge bg-light text-dark ms-2">
+            {{ day_reviews|length }} 题 · 
+            {{ day_reviews|selectattr('result','equalto','correct')|list|length }} 正确
+        </span>
+    </div>
+    <div class="review-day-items ms-3">
+        {% for r in day_reviews %}
+        <a href="{{ url_for('question_detail', question_id=r['mistake_id']) }}" class="text-decoration-none">
+        <div class="review-record-item d-flex align-items-center p-2 rounded mb-1">
+            <span class="review-result-icon me-2 flex-shrink-0">
+                {% if r['result'] == 'correct' %}
+                <span class="text-success fs-5">✅</span>
+                {% elif r['result'] == 'incorrect' %}
+                <span class="text-danger fs-5">❌</span>
+                {% else %}
+                <span class="text-warning fs-5">⚠️</span>
+                {% endif %}
+            </span>
+            <div class="flex-grow-1 min-width-0">
+                <div class="review-record-title text-truncate">{{ r['timu_plain'] }}</div>
+                <div class="d-flex flex-wrap gap-1 mt-1">
+                    {% if r['xueke'] %}
+                    <span class="badge bg-primary badge-sm">{{ r['xueke'] }}</span>
+                    {% endif %}
+                    {% if r['zhishidian'] %}
+                    <span class="knowledge-badge badge-sm">{{ r['zhishidian'] }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="flex-shrink-0 ms-2 text-end">
+                {% if r['time_spent'] and r['time_spent'] > 0 %}
+                <small class="text-muted d-block">{{ r['time_spent'] }}秒</small>
+                {% endif %}
+                {% if r['notes'] %}
+                <small class="text-muted d-block" title="{{ r['notes']|e }}">💬</small>
+                {% endif %}
+            </div>
+        </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="text-center py-4 text-muted">没有符合条件的复习记录</div>
+{% endif %}
+
+{% if total_pages > 1 %}
+<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center">
+    {% for p in range(1, total_pages + 1) %}
+    <li class="page-item {% if p == page %}active{% endif %}">
+        <a class="page-link" href="javascript:loadHistory({{ p }})">{{ p }}</a>
+    </li>
+    {% endfor %}
+</ul></nav>
+{% endif %}
