@@ -345,8 +345,12 @@
             }
         });
 
-        // 点击面板外部关闭
+        // 点击面板外部关闭（右键菜单打开时不关面板，保证输入名称时知识树保持展示）
         document.addEventListener('click', function (e) {
+            if (!panel.classList.contains('d-none')
+                && !ctxMenu.classList.contains('d-none')) {
+                return; // 右键菜单打开中，不关闭面板
+            }
             if (!panel.classList.contains('d-none')
                 && !panel.contains(e.target)
                 && e.target !== toggleBtn
