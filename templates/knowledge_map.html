@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}知识点思维导图 - Tim 学习助手{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h2 class="fw-bold mb-0"><i class="bi bi-diagram-3 text-primary"></i> 知识点思维导图</h2>
+    <div class="d-flex gap-2 align-items-center">
+        <select id="map-xueke" class="form-select form-select-sm" style="width:auto" onchange="loadTree()">
+            <option value="">全部学科</option>
+            {% for s in subjects %}
+            <option value="{{ s }}" {% if xueke_filter == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn btn-outline-secondary btn-sm" onclick="loadTree()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+        <a href="{{ url_for('knowledge_points') }}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-tags"></i> 知识点管理
+        </a>
+    </div>
+</div>
+
+<div class="alert alert-secondary py-2 px-3 small mb-3">
+    <i class="bi bi-info-circle"></i> 掌握率：
+    <span class="badge rounded-pill" style="background:#e5534b">红 &lt;40%</span>
+    <span class="badge rounded-pill" style="background:#f0a020">黄 40–75%</span>
+    <span class="badge rounded-pill" style="background:#2da44e">绿 &gt;75%</span>
+    &nbsp;·&nbsp; 学科 / 章 / 知识点 三层结构，由错题知识点按命名规则自动归集。
+</div>
+
+<div id="map-chart" style="width:100%;height:72vh;min-height:520px;background:var(--bs-body-bg);border:1px solid var(--bs-border-color);border-radius:12px;"></div>
+
+<div id="map-empty" class="text-center text-muted py-5 d-none">
+    <i class="bi bi-inboxes fs-1 d-block mb-2"></i>
+    暂无知识点数据。添加错题并填写「知识点」后，这里会自动生成思维导图。
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script>
+function masteryColor(rate, hasData) {
+    if (!hasData) return '#8b949e';           // 灰：无关联错题
+    if (rate < 40) return '#e5534b';          // 红
+    if (rate <= 75) return '#f0a020';         // 黄
+    return '#2da44e';                         // 绿
+}
+function toEcharts(node) {
+    var hasData = (node.linked_count || 0) > 0;
+    var color = masteryColor(node.mastery_rate, hasData);
+    var label = node.name + (hasData ? '  (' + node.linked_count + ')' : '');
+    var item = {
+        name: label,
+        value: node.mastery_rate,
+        itemStyle: { color: color, borderColor: color },
+        lineStyle: { color: color },
+        _meta: node,
+        children: (node.children || []).map(toEcharts)
+    };
+    return item;
+}
+
+var chart = null;
+function loadTree() {
+    var xueke = document.getElementById('map-xueke').value;
+    var url = '/api/knowledge-points/tree' + (xueke ? ('?xueke=' + encodeURIComponent(xueke)) : '');
+    fetch(url, { headers: { 'X-CSRF-Token': '{{ session.csrf_token }}' } })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+            var tree = (res && res.tree) || [];
+            document.getElementById('map-empty').classList.toggle('d-none', tree.length > 0);
+            document.getElementById('map-chart').classList.toggle('d-none', tree.length === 0);
+            if (!chart) chart = echarts.init(document.getElementById('map-chart'));
+            var data = tree.map(toEcharts);
+            chart.setOption({
+                tooltip: {
+                    trigger: 'item',
+                    triggerOn: 'mousemove',
+                    formatter: function (p) {
+                        var m = p.data && p.data._meta;
+                        if (!m) return p.name;
+                        var lvl = {1: '学科', 2: '章', 3: '知识点'}[m.level] || '';
+                        return '<b>' + m.name + '</b> <span class="text-muted">(' + lvl + ')</span><br>'
+                            + '关联错题：' + (m.linked_count || 0) + '<br>'
+                            + '已掌握：' + (m.mastered_count || 0) + '<br>'
+                            + '掌握率：' + (m.mastery_rate || 0) + '%<br>'
+                            + '复习次数：' + (m.review_count || 0);
+                    }
+                },
+                series: [{
+                    type: 'tree',
+                    data: data,
+                    top: '4%', left: '8%', bottom: '4%', right: '18%',
+                    symbolSize: 12,
+                    orient: 'LR',
+                    expandAndCollapse: true,
+                    initialTreeDepth: 2,
+                    roam: true,
+                    label: {
+                        position: 'right',
+                        verticalAlign: 'middle',
+                        align: 'left',
+                        fontSize: 13,
+                        color: 'inherit'
+                    },
+                    leaves: { label: { position: 'right', align: 'left' } },
+                    emphasis: { focus: 'descendant' },
+                    animationDuration: 450,
+                    animationDurationUpdate: 600
+                }]
+            });
+            chart.resize();
+        })
+        .catch(function (e) {
+            console.error(e);
+            document.getElementById('map-empty').classList.remove('d-none');
+        });
+}
+
+window.addEventListener('resize', function () { if (chart) chart.resize(); });
+document.addEventListener('DOMContentLoaded', loadTree);
+</script>
+{% endblock %}

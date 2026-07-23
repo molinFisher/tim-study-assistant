@@ -179,6 +179,64 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_tokens_user_id ON api_tokens(user_id)')
 
+    # ========== 9. 知识点多层结构表（思维导图数据模型） ==========
+    # 父子引用树：parent_id 自引用 + level 语义分层（1=学科/2=章/3=知识点）
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS knowledge_points (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            parent_id INTEGER,
+            level INTEGER NOT NULL DEFAULT 3,
+            name TEXT NOT NULL,
+            xueke TEXT DEFAULT '',
+            uuid TEXT NOT NULL,
+            sort_order INTEGER DEFAULT 0,
+            linked_count INTEGER DEFAULT 0,
+            mastered_count INTEGER DEFAULT 0,
+            review_count INTEGER DEFAULT 0,
+            mastery_rate REAL DEFAULT 0.0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (parent_id) REFERENCES knowledge_points(id) ON DELETE CASCADE
+        )
+    ''')
+
+    # ========== 10. 错题-知识点多对多关联表 ==========
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mistake_knowledge (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mistake_id INTEGER NOT NULL,
+            kp_id INTEGER NOT NULL,
+            uuid TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (mistake_id) REFERENCES mistake_records(id) ON DELETE CASCADE,
+            FOREIGN KEY (kp_id) REFERENCES knowledge_points(id) ON DELETE CASCADE,
+            UNIQUE(mistake_id, kp_id)
+        )
+    ''')
+
+    indexes += [
+        'CREATE INDEX IF NOT EXISTS idx_kp_uuid ON knowledge_points(uuid)',
+        'CREATE INDEX IF NOT EXISTS idx_kp_parent ON knowledge_points(parent_id)',
+        'CREATE INDEX IF NOT EXISTS idx_kp_xueke ON knowledge_points(xueke)',
+        'CREATE INDEX IF NOT EXISTS idx_mk_mistake ON mistake_knowledge(mistake_id)',
+        'CREATE INDEX IF NOT EXISTS idx_mk_kp ON mistake_knowledge(kp_id)',
+        'CREATE INDEX IF NOT EXISTS idx_mk_uuid ON mistake_knowledge(uuid)',
+    ]
+
+    # 首次运行时，若知识点树为空但已有历史错题，自动构建多层结构
+    try:
+        kp_cnt = cursor.execute("SELECT COUNT(*) FROM knowledge_points").fetchone()[0]
+        zp_cnt = cursor.execute(
+            "SELECT COUNT(*) FROM mistake_records WHERE status != 'deleted' AND zhishidian != ''").fetchone()[0]
+        if kp_cnt == 0 and zp_cnt > 0:
+            conn.commit()
+            conn.close()
+            from knowledge_tree import migrate_all_knowledge
+            migrate_all_knowledge()
+            return
+    except Exception:
+        pass
+
     # 迁移：确保 voice_data 列存在
     try:
         cursor.execute("ALTER TABLE mistake_records ADD COLUMN voice_data TEXT DEFAULT ''")

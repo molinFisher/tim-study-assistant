@@ -29,6 +29,10 @@ import shutil
 import glob as glob_mod
 from api_auth import api_token_required, create_token_record, get_token_prefix
 from api_ratelimit import limiter
+from knowledge_tree import (
+    sync_mistake_knowledge, recompute_knowledge_stats,
+    get_knowledge_tree, migrate_all_knowledge,
+)
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -434,6 +438,8 @@ def add_question():
                     save_image(file, mistake_id)
 
         flash('错题添加成功！', 'success')
+        # 同步知识点多层结构（命名规则自动拆层级 + 多对多关联）
+        sync_mistake_knowledge(mistake_id, xueke, zhishidian, g.user_uuid, replace=True)
         return redirect(url_for('question_detail', question_id=mistake_id))
 
     knowledge_points = get_knowledge_points()
@@ -591,6 +597,8 @@ def edit_question(question_id):
                     save_image(file, question_id)
 
         flash('错题更新成功！', 'success')
+        # 同步知识点多层结构（命名规则自动拆层级 + 多对多关联）
+        sync_mistake_knowledge(question_id, xueke, zhishidian, g.user_uuid, replace=True)
         return redirect(url_for('question_detail', question_id=question_id))
 
     # 获取已有图片
@@ -620,6 +628,8 @@ def _delete_question_records(question_id):
     execute_db(
         "UPDATE mistake_records SET status='deleted', updated_at=CURRENT_TIMESTAMP WHERE id=? AND uuid=?",
         (question_id, g.user_uuid))
+    # 软删除后重算关联知识点的统计冗余
+    recompute_knowledge_stats(g.user_uuid)
     return True
 
 
@@ -1016,10 +1026,10 @@ def api_ocr_save_batch():
         try:
             mistake_id = execute_db(
                 '''INSERT INTO mistake_records
-                   (sys_platform, xueke, timu, xueshengdaan, zhengquedaan,
+                   (uuid, sys_platform, xueke, timu, xueshengdaan, zhengquedaan,
                     cuowufenxi, zhishidian, difficulty)
                    VALUES (?, 'web', ?, ?, ?, ?, ?, ?, ?)''',
-                (xueke, timu,
+                (g.user_uuid, xueke, timu,
                     q.get('xueshengdaan', ''),
                     q.get('zhengquedaan', ''),
                     q.get('cuowufenxi', ''),
@@ -1027,6 +1037,8 @@ def api_ocr_save_batch():
                     q.get('difficulty', 3)
                 )
             )
+            # 同步知识点多层结构
+            sync_mistake_knowledge(mistake_id, xueke, q.get('zhishidian', ''), g.user_uuid, replace=True)
             saved_ids.append(mistake_id)
         except Exception as e:
             errors.append({'index': idx, 'error': str(e)})
@@ -1325,6 +1337,38 @@ def api_merge_knowledge_points():
         (source,))
 
     return jsonify({'success': True, 'message': f'已将 {cnt} 道错题从「{source}」合并到「{target}」', 'count': cnt})
+
+
+@app.route('/api/knowledge-points/tree')
+@login_required
+def api_knowledge_points_tree():
+    """知识点多层结构树（供思维导图 ECharts tree 消费）。
+    递归 parent_id 构建层级 JSON，含掌握率等统计字段。"""
+    xueke = request.args.get('xueke', '').strip()
+    tree = get_knowledge_tree(g.user_uuid, xueke=xueke)
+    return jsonify({'success': True, 'tree': tree})
+
+
+@app.route('/api/knowledge-points/migrate')
+@login_required
+def api_knowledge_points_migrate():
+    """手动触发全量重建知识点多层结构（幂等，供结构变更后刷新）。"""
+    try:
+        total = migrate_all_knowledge()
+        return jsonify({'success': True, 'message': f'知识点多层结构已重建，处理 {total} 道错题', 'count': total})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'迁移失败：{e}'}), 500
+
+
+@app.route('/knowledge-map')
+@login_required
+def knowledge_map():
+    """知识点思维导图页面（ECharts tree 可视化多层结构）。"""
+    xueke_filter = request.args.get('xueke', '')
+    resp = make_response(render_template('knowledge_map.html',
+        xueke_filter=xueke_filter,
+        subjects=Config.get_subjects()))
+    return set_uuid_cookie(resp, g.user_uuid)
 
 
 # ==================== 学习计划 ====================
@@ -1912,6 +1956,9 @@ def submit_review(mistake_id):
            VALUES (?, ?, ?, ?, ?, ?)''',
         (mistake_id, g.user_uuid, date.today().isoformat(), result, time_spent, notes)
     )
+
+    # 复习改变错题掌握状态，重算关联知识点的统计冗余（掌握率/数量）
+    recompute_knowledge_stats(g.user_uuid)
 
     return jsonify({
         'success': True,
