@@ -63,7 +63,7 @@ function toEcharts(node) {
 var chart = null;
 function loadTree() {
     var xueke = document.getElementById('map-xueke').value;
-    var url = '/api/knowledge-points/tree' + (xueke ? ('?xueke=' + encodeURIComponent(xueke)) : '');
+    var url = '/api/knowledge-points/tree?scope=all' + (xueke ? ('&xueke=' + encodeURIComponent(xueke)) : '');
     fetch(url, { headers: { 'X-CSRF-Token': '{{ session.csrf_token }}' } })
         .then(function (r) { return r.json(); })
         .then(function (res) {

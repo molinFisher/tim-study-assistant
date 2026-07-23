@@ -64,7 +64,7 @@
     function loadTree() {
         if (isLoading) return;
         isLoading = true;
-        fetch('/api/knowledge-points/tree', {
+        fetch('/api/knowledge-points/tree?scope=all', {
             headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content || '' }
         })
             .then(function (r) { return r.json(); })

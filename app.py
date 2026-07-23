@@ -1347,10 +1347,14 @@ def api_merge_knowledge_points():
 @app.route('/api/knowledge-points/tree')
 @login_required
 def api_knowledge_points_tree():
-    """知识点多层结构树（供思维导图 ECharts tree 消费）。
-    递归 parent_id 构建层级 JSON，含掌握率等统计字段。"""
+    """知识点多层结构树（供思维导图 ECharts tree 消费，或录入选择器全库拉取）。
+    递归 parent_id 构建层级 JSON，含掌握率等统计字段。
+    scope=all 时返回全库知识点（单租户共享库，录入标签时可见全部学科），
+    默认按当前账号 uuid 过滤（思维导图视图）。"""
     xueke = request.args.get('xueke', '').strip()
-    tree = get_knowledge_tree(g.user_uuid, xueke=xueke)
+    scope = request.args.get('scope', '').strip()
+    uuid = None if scope == 'all' else g.user_uuid
+    tree = get_knowledge_tree(uuid, xueke=xueke)
     return jsonify({'success': True, 'tree': tree})
 
 

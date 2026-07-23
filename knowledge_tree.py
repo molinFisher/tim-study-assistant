@@ -15,7 +15,8 @@ Tim 学习助手 - 知识点多层结构（思维导图数据模型）操作层
     · 含 '/'  -> '/' 之前为 level2 章，最后一段为 level3 知识点
     · 多级 '/' -> 除最后一段外合并为单个 level2 章名（决策④：归一化合并策略自定）
 
-所有数据按 uuid 隔离（与 mistake_records 一致），tree API / 统计维护均以 uuid 为作用域。
+单租户场景下知识点库为共享库：知识点节点按 (level, name, parent_id) 全局唯一，
+不随浏览器 uuid 分裂；录入选择器可拉取全库（scope=all），思维导图按账号视图展示。
 """
 from database import get_db, query_db, execute_db, rows_to_dicts
 
@@ -56,13 +57,18 @@ def parse_path(entry):
 # ============ 节点确保（幂等） ============
 
 def ensure_subject(xueke, uuid):
-    """确保 level1 学科节点存在（复用现有 xueke），返回节点 id。"""
+    """确保 level1 学科节点存在（全局查找，避免跨 uuid 重复建节点），返回节点 id。
+
+    单租户场景下知识点库为共享库：按 (level, name, parent_id) 全局唯一匹配，
+    不论当前 uuid 是否已存在该学科，都复用同一节点，从根本上杜绝「数学/英语」
+    等学科在多个 uuid 下重复出现。新建节点时仍记录传入 uuid 作为归属标记。
+    """
     xueke = normalize_name(xueke)
     if not xueke:
         return None
     row = query_db(
-        "SELECT id FROM knowledge_points WHERE uuid=? AND level=1 AND name=? AND parent_id IS NULL",
-        (uuid, xueke), one=True)
+        "SELECT id FROM knowledge_points WHERE level=1 AND name=? AND parent_id IS NULL",
+        (xueke,), one=True)
     if row:
         return row['id']
     return execute_db(
@@ -72,15 +78,19 @@ def ensure_subject(xueke, uuid):
 
 
 def ensure_node(name, level, xueke, uuid, parent_id):
-    """确保指定 (uuid, level, name, parent_id) 的知识点节点存在，返回节点 id。"""
+    """确保指定 (level, name, parent_id) 的知识点节点存在（全局查找），返回节点 id。
+
+    与 ensure_subject 同理：共享库内按 (level, name, parent_id) 唯一匹配，
+    复用既有节点，避免同一 章/知识点 在多个 uuid 下分裂。
+    """
     if parent_id is None:
         row = query_db(
-            "SELECT id FROM knowledge_points WHERE uuid=? AND level=? AND name=? AND parent_id IS NULL",
-            (uuid, level, name), one=True)
+            "SELECT id FROM knowledge_points WHERE level=? AND name=? AND parent_id IS NULL",
+            (level, name), one=True)
     else:
         row = query_db(
-            "SELECT id FROM knowledge_points WHERE uuid=? AND level=? AND name=? AND parent_id=?",
-            (uuid, level, name, parent_id), one=True)
+            "SELECT id FROM knowledge_points WHERE level=? AND name=? AND parent_id=?",
+            (level, name, parent_id), one=True)
     if row:
         return row['id']
     return execute_db(
@@ -174,17 +184,27 @@ def recompute_knowledge_stats(uuid):
 
 # ============ 树构建（供思维导图消费） ============
 
-def get_knowledge_tree(uuid, xueke=None):
+def get_knowledge_tree(uuid=None, xueke=None):
     """
     递归构建知识点层级树（按 parent_id）。
     返回根节点(level1 学科)列表，每个节点含 children 子节点。
     字段：id/name/level/xueke/linked_count/mastered_count/review_count/mastery_rate/children
+
+    uuid 过滤说明（单租户共享库）：
+      · uuid 为具体值 -> 仅返回该 uuid 下的知识点（思维导图按账号视图）
+      · uuid 为 None    -> 返回全库所有知识点（录入选择器 scope=all 使用）
     """
-    sql = "SELECT id, parent_id, level, name, xueke, linked_count, mastered_count, review_count, mastery_rate FROM knowledge_points WHERE uuid=?"
-    params = [uuid]
+    sql = "SELECT id, parent_id, level, name, xueke, linked_count, mastered_count, review_count, mastery_rate FROM knowledge_points"
+    where = []
+    params = []
+    if uuid:
+        where.append("uuid=?")
+        params.append(uuid)
     if xueke:
-        sql += " AND xueke=?"
+        where.append("xueke=?")
         params.append(xueke)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY level, sort_order, name"
     nodes = rows_to_dicts(query_db(sql, params))
 
