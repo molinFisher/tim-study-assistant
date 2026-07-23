@@ -2,6 +2,7 @@
 .env
 __pycache__/
 *.pyc
-data/
 uploads/
 *.db
+!data/*.db
+data/easyocr_models/
