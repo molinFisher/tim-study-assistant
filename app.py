@@ -1493,6 +1493,52 @@ def api_create_knowledge_node():
                     'message': f'已添加「{name}」'})
 
 
+@app.route('/api/knowledge-points/node/<int:node_id>', methods=['DELETE'])
+@login_required
+def api_delete_knowledge_node(node_id):
+    """删除知识点树节点（学科不可删；章/知识点可删，级联删除其子孙节点）。
+
+    删除逻辑：
+      · level1 学科 → 直接拒绝（学科不可删除）
+      · 递归删除 node_id 及其所有子孙节点（FOREIGN KEY ON DELETE CASCADE
+        会自动清理 mistake_knowledge 关联）
+      · 删除后重算 affected uuid 下的掌握率统计
+    """
+    node = query_db(
+        "SELECT id, level, name, xueke, uuid FROM knowledge_points WHERE id=?",
+        (node_id,), one=True)
+    if not node:
+        return jsonify({'success': False, 'message': '节点不存在'}), 404
+    if node['level'] == 1:
+        return jsonify({'success': False, 'message': '学科不可删除'}), 403
+
+    # 收集被删节点（含子孙），记录名称和 uuid 以便重算统计
+    name = node['name']
+    uid = node['uuid']
+
+    def collect_ids(nid):
+        children = query_db("SELECT id FROM knowledge_points WHERE parent_id=?", (nid,))
+        ids = [nid]
+        for ch in children:
+            ids.extend(collect_ids(ch['id']))
+        return ids
+
+    all_ids = collect_ids(node_id)
+    if not all_ids:
+        return jsonify({'success': False, 'message': '无节点可删除'}), 404
+
+    # 逐条删除（SQLite ON DELETE CASCADE 自动清关联）
+    for nid in all_ids:
+        execute_db("DELETE FROM knowledge_points WHERE id=?", (nid,))
+
+    # 重算统计
+    recompute_knowledge_stats(uid)
+
+    return jsonify({'success': True,
+                    'message': f'已删除「{name}」及其 {len(all_ids)-1} 个子节点',
+                    'deleted_count': len(all_ids)})
+
+
 @app.route('/api/knowledge-points/migrate')
 @login_required
 def api_knowledge_points_migrate():

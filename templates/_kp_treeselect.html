@@ -31,6 +31,7 @@
         <input type="text" class="form-control form-control-sm mb-2" id="kp-ctx-input"
                placeholder="输入名称…" maxlength="50" autocomplete="off">
         <div class="d-flex gap-1 justify-content-end">
+            <button class="btn btn-sm btn-outline-danger" id="kp-ctx-delete" type="button" title="删除该节点（学科不可删）">删除</button>
             <button class="btn btn-sm btn-outline-secondary" id="kp-ctx-cancel" type="button">取消</button>
             <button class="btn btn-sm btn-outline-primary" id="kp-ctx-sibling" type="button" title="在同级下方新增节点">加同级</button>
             <button class="btn btn-sm btn-primary" id="kp-ctx-child" type="button" title="在被右键节点下新增下级节点">加下级</button>
@@ -56,6 +57,7 @@
     var ctxInput = document.getElementById('kp-ctx-input');
     var ctxSibling = document.getElementById('kp-ctx-sibling');
     var ctxChild = document.getElementById('kp-ctx-child');
+    var ctxDelete = document.getElementById('kp-ctx-delete');
     var ctxCancel = document.getElementById('kp-ctx-cancel');
 
     function csrf() {
@@ -273,6 +275,9 @@
         var label = '新增知识点（右键「' + ctxTarget.name + '」）';
         ctxLabel.textContent = label;
         ctxInput.value = '';
+        // 学科(level1)禁用删除按钮
+        ctxDelete.disabled = (ctxTarget.level === 1);
+        ctxDelete.classList.toggle('d-none', false);
         ctxMenu.classList.remove('d-none');
         // 视口定位，避免溢出
         var x = e.clientX, y = e.clientY;
@@ -365,6 +370,24 @@
         });
         ctxSibling.addEventListener('click', function () { ctxConfirm('sibling'); });
         ctxChild.addEventListener('click', function () { ctxConfirm('child'); });
+        ctxDelete.addEventListener('click', function () {
+            if (ctxDelete.disabled) return;
+            if (!confirm('确定删除「' + ctxTarget.name + '」及其所有下级知识点？')) return;
+            fetch('/api/knowledge-points/node/' + ctxTarget.id, {
+                method: 'DELETE',
+                headers: { 'X-CSRF-Token': csrf() }
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.success) {
+                        hideCtxMenu();
+                        loadTree();
+                    } else {
+                        alert(res.message || '删除失败');
+                    }
+                })
+                .catch(function () { alert('删除失败，请重试'); });
+        });
         ctxCancel.addEventListener('click', hideCtxMenu);
         ctxInput.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') { e.preventDefault(); ctxConfirm('sibling'); }

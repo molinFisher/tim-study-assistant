@@ -623,6 +623,69 @@ def main():
     else:
         FAIL += 1; print("  ❌ 未找到数学学科，无法测试加节点模式"); ERRORS.append("加节点模式:无数学")
 
+    # ---------- 12. 知识树删除节点 ----------
+    section("12. 知识树删除节点（学科不可删 / 级联删子孙）")
+    rt2 = S.get(f"{BASE}/api/knowledge-points/tree?scope=all",
+                headers={"X-CSRF-Token": csrf_token()}, timeout=20).json()["tree"]
+    math2 = next((n for n in rt2 if n["name"] == "数学"), None)
+    if math2:
+        # 学科不可删
+        rd = S.delete(f"{BASE}/api/knowledge-points/node/{math2['id']}",
+                       headers={"X-CSRF-Token": csrf_token()})
+        if rd.status_code == 403 and rd.json().get("success") is False:
+            PASS += 1; print("  ✅ 删除学科被拒(403) — 学科不可删除")
+        else:
+            FAIL += 1; print(f"  ❌ 删除学科未拒: {rd.status_code} {rd.text[:80]}"); ERRORS.append("删除学科未拒")
+
+        # 创建测试章→点→子，再删章，验证级联
+        NH2 = {"X-CSRF-Token": csrf_token(), "Content-Type": "application/json"}
+        r1 = S.post(f"{BASE}/api/knowledge-points/node",
+                     json={"name": "TEST_删章V5", "parent_id": math2["id"]}, headers=NH2).json()
+        chap_id = r1["node"]["id"] if r1.get("success") else None
+        r2 = S.post(f"{BASE}/api/knowledge-points/node",
+                     json={"name": "TEST_删点V5", "parent_id": chap_id}, headers=NH2).json()
+        pt_id = r2["node"]["id"] if r2.get("success") else None
+        r3 = S.post(f"{BASE}/api/knowledge-points/node",
+                     json={"name": "TEST_删子V5", "parent_id": pt_id, "mode": "child"}, headers=NH2).json()
+        child_id = r3["node"]["id"] if r3.get("success") else None
+
+        if chap_id and pt_id and child_id:
+            rd2 = S.delete(f"{BASE}/api/knowledge-points/node/{chap_id}",
+                            headers={"X-CSRF-Token": csrf_token()})
+            if rd2.status_code == 200 and rd2.json().get("success"):
+                dc = rd2.json().get("deleted_count", 0)
+                c2 = db()
+                n_chap = c2.execute("SELECT COUNT(*) c FROM knowledge_points WHERE id=?", (chap_id,)).fetchone()["c"]
+                n_pt = c2.execute("SELECT COUNT(*) c FROM knowledge_points WHERE id=?", (pt_id,)).fetchone()["c"]
+                n_child = c2.execute("SELECT COUNT(*) c FROM knowledge_points WHERE id=?", (child_id,)).fetchone()["c"]
+                c2.close()
+                if dc >= 3 and n_chap == 0 and n_pt == 0 and n_child == 0:
+                    PASS += 1; print(f"  ✅ 删章级联清除 {dc} 个节点（章/点/子均 0）")
+                else:
+                    FAIL += 1; print(f"  ❌ 级联删除异常: dc={dc}, 残留 章{n_chap} 点{n_pt} 子{n_child}")
+                    ERRORS.append("级联删除异常")
+            else:
+                FAIL += 1; print(f"  ❌ 删章失败: {rd2.status_code}"); ERRORS.append("删章失败")
+        else:
+            FAIL += 1; print(f"  ❌ 建测试节点失败: chap={chap_id} pt={pt_id} child={child_id}")
+            ERRORS.append("建测试节点失败")
+
+        # 不存在节点
+        rd3 = S.delete(f"{BASE}/api/knowledge-points/node/99999999",
+                        headers={"X-CSRF-Token": csrf_token()})
+        if rd3.status_code == 404:
+            PASS += 1; print("  ✅ 删除不存在节点返回 404")
+        else:
+            FAIL += 1; print(f"  ❌ 删除不存在节点未404: {rd3.status_code}"); ERRORS.append("删除不存在节点未404")
+
+        # 清理（如果级联删除未完全生效）
+        cc = db()
+        cc.execute("DELETE FROM knowledge_points WHERE name IN ('TEST_删章V5','TEST_删点V5','TEST_删子V5')")
+        cc.commit(); cc.close()
+        S.get(f"{BASE}/api/knowledge-points/migrate", headers={"X-CSRF-Token": csrf_token()}, timeout=20)
+    else:
+        FAIL += 1; print("  ❌ 未找到数学学科"); ERRORS.append("删除节点:无数学")
+
     # ---------- 清理 ----------
     section("清理测试数据")
     cleanup()
