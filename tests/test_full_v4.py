@@ -256,6 +256,61 @@ def main():
         print("  ❌ 命名规则拆层级未生效（函数/一次函数）")
         ERRORS.append("命名规则拆层级失败")
 
+    # 右键新增节点（/api/knowledge-points/node）：学科→章 / 章→知识点 / 知识点→同级
+    r3 = S.get(f"{BASE}/api/knowledge-points/tree?scope=all", timeout=20)
+    t3 = r3.json()["tree"]
+    math_node = next((n for n in t3 if n["name"] == "数学"), None)
+    if not math_node:
+        FAIL += 1; print("  ❌ 未找到数学学科，无法测试右键建节点"); ERRORS.append("右键建节点:无数学")
+    else:
+        mid_subj = math_node["id"]
+        chap_node = math_node["children"][0] if math_node["children"] else None
+        pt_node = chap_node["children"][0] if (chap_node and chap_node["children"]) else None
+        hdr = {"X-CSRF-Token": csrf_token(), "Content-Type": "application/json"}
+
+        def _add_node(name, parent_id):
+            return S.post(f"{BASE}/api/knowledge-points/node",
+                          json={"name": name, "parent_id": parent_id}, headers=hdr, timeout=20)
+
+        # 1) 学科下加章
+        ja = _add_node("TEST右键章", mid_subj).json()
+        if ja.get("success") and ja["node"]["level"] == 2:
+            PASS += 1; print("  ✅ 右键学科→添加章(level2) 成功")
+        else:
+            FAIL += 1; print(f"  ❌ 右键学科→加章失败: {ja}"); ERRORS.append("右键加章失败")
+        # 2) 章下加知识点
+        if chap_node:
+            jb = _add_node("TEST右键点", chap_node["id"]).json()
+            if jb.get("success") and jb["node"]["level"] == 3:
+                PASS += 1; print("  ✅ 右键章→添加知识点(level3) 成功")
+            else:
+                FAIL += 1; print(f"  ❌ 右键章→加知识点失败: {jb}"); ERRORS.append("右键加知识点失败")
+        else:
+            WARN += 1; print("  ⚠️ 数学无章，跳过章→知识点用例")
+        # 3) 知识点下加同级（挂在同父章下）
+        if pt_node:
+            jc = _add_node("TEST右键同级", pt_node["parent_id"]).json()
+            if jc.get("success") and jc["node"]["level"] == 3 and jc["node"]["parent_id"] == pt_node["parent_id"]:
+                PASS += 1; print("  ✅ 右键知识点→添加同级(level3, 同父) 成功")
+            else:
+                FAIL += 1; print(f"  ❌ 右键知识点→加同级失败: {jc}"); ERRORS.append("右键加同级失败")
+        else:
+            WARN += 1; print("  ⚠️ 数学首章无知识点，跳过同级用例")
+        # 4) 重复加同名章 -> 复用，不产生重复节点
+        _add_node("TEST右键章", mid_subj)
+        rd2 = S.get(f"{BASE}/api/knowledge-points/tree?scope=all", timeout=20).json()["tree"]
+        m2 = next((n for n in rd2 if n["name"] == "数学"), None)
+        dup_cnt = sum(1 for c in m2["children"] if c["name"] == "TEST右键章") if m2 else 0
+        if dup_cnt == 1:
+            PASS += 1; print("  ✅ 重复加同名章复用节点，无重复(level2 仅 1 个)")
+        else:
+            FAIL += 1; print(f"  ❌ 重复加章产生重复节点: count={dup_cnt}"); ERRORS.append("右键加章重复")
+        # 清理测试节点并重建树，恢复一致状态
+        cc = db()
+        cc.execute("DELETE FROM knowledge_points WHERE name IN ('TEST右键章','TEST右键点','TEST右键同级')")
+        cc.commit(); cc.close()
+        S.get(f"{BASE}/api/knowledge-points/migrate", timeout=20)
+
     # 多对多：测试错题编辑前曾关联 "函数/二次函数；二次函数" → 至少 2 个关联
     c = db()
     nlinks = c.execute(

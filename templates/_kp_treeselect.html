@@ -25,6 +25,17 @@
         </div>
     </div>
 
+    <!-- 右键上下文菜单（新增节点） -->
+    <div class="kp-ctx-menu border rounded shadow-sm bg-body p-2 d-none" id="kp-ctx-menu">
+        <div class="kp-ctx-label small text-muted mb-1" id="kp-ctx-label"></div>
+        <input type="text" class="form-control form-control-sm mb-2" id="kp-ctx-input"
+               placeholder="输入名称…" maxlength="50" autocomplete="off">
+        <div class="d-flex gap-1 justify-content-end">
+            <button class="btn btn-sm btn-outline-secondary" id="kp-ctx-cancel" type="button">取消</button>
+            <button class="btn btn-sm btn-primary" id="kp-ctx-ok" type="button">确定</button>
+        </div>
+    </div>
+
     <!-- 隐藏的原始输入（向后兼容，值以分号拼接） -->
     <input type="hidden" name="zhishidian" id="zhishidian-hidden" value="{{ kp_init_val }}">
 </div>
@@ -39,12 +50,23 @@
     var searchInput = document.getElementById('kp-search-input');
     var hiddenInput = document.getElementById('zhishidian-hidden');
     var toggleBtn = document.getElementById('kp-tree-toggle');
+    var ctxMenu = document.getElementById('kp-ctx-menu');
+    var ctxLabel = document.getElementById('kp-ctx-label');
+    var ctxInput = document.getElementById('kp-ctx-input');
+    var ctxOk = document.getElementById('kp-ctx-ok');
+    var ctxCancel = document.getElementById('kp-ctx-cancel');
+
+    function csrf() {
+        return document.querySelector('meta[name=csrf-token]').content || '';
+    }
 
     var treeData = [];       // 原始树数据
     var selected = {};       // {kpName: true}  已选中
     var flatMap = {};        // {kpName: {level, linked_count, xueke, chapter}}
     var expanded = {};       // {nodeKey: true}  展开状态
     var isLoading = false;
+    var pendingSelect = null; // 建节点后待自动选中的名称
+    var ctxTarget = null;     // 右键目标节点 {id, level, parentId, name}
 
     // ===== 初始化 =====
     function init() {
@@ -65,13 +87,19 @@
         if (isLoading) return;
         isLoading = true;
         fetch('/api/knowledge-points/tree?scope=all', {
-            headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content || '' }
+            headers: { 'X-CSRF-Token': csrf() }
         })
             .then(function (r) { return r.json(); })
             .then(function (res) {
                 treeData = res.tree || [];
                 buildFlatMap(treeData);
                 render();
+                // 建节点后自动选中新叶子
+                if (pendingSelect && flatMap[pendingSelect]) {
+                    selected[pendingSelect] = true;
+                    pendingSelect = null;
+                    render();
+                }
                 isLoading = false;
             })
             .catch(function () {
@@ -191,7 +219,7 @@
             if (lvl <= 2) cls += ' kp-node-folder';
             if (lvl === 3) cls += ' kp-node-leaf';
 
-            html += '<div class="' + cls + '" data-name="' + name + '" data-level="' + lvl + '" style="' + indent + '">';
+            html += '<div class="' + cls + '" data-id="' + (nd.id || '') + '" data-parent-id="' + (nd.parent_id == null ? '' : nd.parent_id) + '" data-name="' + name + '" data-level="' + lvl + '" style="' + indent + '">';
             html += expandIcon + checkIcon + icon + '<span>' + name + '</span>' + countBadge;
             html += '</div>';
 
@@ -219,6 +247,80 @@
     function toggleExpand(name) {
         expanded[name] = !expanded[name];
         render();
+    }
+
+    // ===== 右键新增节点 =====
+    function hideCtxMenu() {
+        ctxMenu.classList.add('d-none');
+        ctxTarget = null;
+    }
+
+    function onContextMenu(e) {
+        var el = e.target.closest('.kp-node');
+        if (!el) return;
+        e.preventDefault();
+        ctxTarget = {
+            id: parseInt(el.dataset.id, 10),
+            level: parseInt(el.dataset.level, 10),
+            parentId: el.dataset.parentId === '' ? null : parseInt(el.dataset.parentId, 10),
+            name: el.dataset.name
+        };
+        var label;
+        if (ctxTarget.level === 1) label = '在「' + ctxTarget.name + '」下添加章';
+        else if (ctxTarget.level === 2) label = '在「' + ctxTarget.name + '」下添加知识点';
+        else label = '在「' + ctxTarget.name + '」同级添加知识点';
+        ctxLabel.textContent = label;
+        ctxInput.value = '';
+        ctxMenu.classList.remove('d-none');
+        // 视口定位，避免溢出
+        var x = e.clientX, y = e.clientY;
+        var mw = ctxMenu.offsetWidth || 210, mh = ctxMenu.offsetHeight || 96;
+        if (x + mw > window.innerWidth) x = window.innerWidth - mw - 8;
+        if (y + mh > window.innerHeight) y = window.innerHeight - mh - 8;
+        ctxMenu.style.position = 'fixed';
+        ctxMenu.style.top = y + 'px';
+        ctxMenu.style.left = x + 'px';
+        ctxInput.focus();
+    }
+
+    function ctxConfirm() {
+        var name = ctxInput.value.trim();
+        if (!name) { ctxInput.focus(); return; }
+        var parentId, isLeaf, parentName;
+        if (ctxTarget.level === 3) {
+            parentId = ctxTarget.parentId;      // 同级：挂在同父节点下
+            isLeaf = true;
+            parentName = (flatMap[ctxTarget.name] || {}).chapter || '';
+        } else if (ctxTarget.level === 1) {
+            parentId = ctxTarget.id;           // 学科下加章
+            isLeaf = false;
+            parentName = ctxTarget.name;
+        } else { // level 2
+            parentId = ctxTarget.id;           // 章下加知识点
+            isLeaf = true;
+            parentName = ctxTarget.name;
+        }
+        createNode(parentId, name, isLeaf, parentName);
+        hideCtxMenu();
+    }
+
+    function createNode(parentId, name, isLeaf, parentName) {
+        fetch('/api/knowledge-points/node', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
+            body: JSON.stringify({ name: name, parent_id: parentId })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res.success) {
+                    if (parentName) expanded[parentName] = true; // 展开父路径
+                    if (isLeaf) pendingSelect = name;            // 自动选中新叶子
+                    loadTree();
+                } else {
+                    alert(res.message || '添加失败');
+                }
+            })
+            .catch(function () { alert('添加失败，请重试'); });
     }
 
     // ===== 事件绑定 =====
@@ -253,6 +355,28 @@
                 panel.classList.add('d-none');
             }
         });
+
+        // 右键菜单：在节点上右键 -> 弹出新增菜单
+        body.addEventListener('contextmenu', function (e) {
+            var el = e.target.closest('.kp-node');
+            if (!el) return;
+            onContextMenu(e);
+        });
+        ctxOk.addEventListener('click', ctxConfirm);
+        ctxCancel.addEventListener('click', hideCtxMenu);
+        ctxInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); ctxConfirm(); }
+            else if (e.key === 'Escape') { e.preventDefault(); hideCtxMenu(); }
+        });
+        // 点击菜单外部 / Esc 关闭右键菜单
+        document.addEventListener('click', function (e) {
+            if (!ctxMenu.classList.contains('d-none') && !ctxMenu.contains(e.target)) {
+                hideCtxMenu();
+            }
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !ctxMenu.classList.contains('d-none')) hideCtxMenu();
+        });
     }
 
     if (document.readyState === 'loading') {
@@ -267,6 +391,11 @@
 .kp-treeselect { position: relative; }
 .kp-tags { min-height: 28px; }
 .kp-tag:hover { opacity: 0.8; }
+.kp-ctx-menu {
+    position: fixed; z-index: 1200; min-width: 210px;
+    background: var(--bs-body-bg, #fff);
+}
+.kp-ctx-menu .form-control-sm { font-size: 0.85rem; }
 .kp-tree-panel {
     position: absolute; top: 100%; left: 0; right: 0; z-index: 1050;
     max-height: 340px; overflow-y: auto;

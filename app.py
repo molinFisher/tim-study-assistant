@@ -32,6 +32,7 @@ from api_ratelimit import limiter
 from knowledge_tree import (
     sync_mistake_knowledge, recompute_knowledge_stats,
     get_knowledge_tree, migrate_all_knowledge,
+    ensure_subject, ensure_node, normalize_name,
 )
 
 app = Flask(__name__)
@@ -1356,6 +1357,55 @@ def api_knowledge_points_tree():
     uuid = None if scope == 'all' else g.user_uuid
     tree = get_knowledge_tree(uuid, xueke=xueke)
     return jsonify({'success': True, 'tree': tree})
+
+
+@app.route('/api/knowledge-points/node', methods=['POST'])
+@login_required
+def api_create_knowledge_node():
+    """在知识点多层结构树中新增节点（供录入选择器右键「添加子节点 / 同级」）。
+
+    行为：
+      · 右键学科(level1) -> 新增章(level2)
+      · 右键章(level2)   -> 新增知识点(level3)
+      · 右键知识点(level3)-> 新增同级知识点(level3，挂在同父节点下)
+      · 不传 parent_id    -> 新增学科(level1)
+    复用既有节点（ensure_* 全局查找），避免重复建节点。
+    """
+    data = request.get_json(silent=True) or {}
+    name = normalize_name(data.get('name') or '')
+    parent_id = data.get('parent_id')
+    if not name:
+        return jsonify({'success': False, 'message': '节点名称不能为空'})
+
+    parent = None
+    if parent_id:
+        parent = query_db(
+            "SELECT id, level, xueke, name FROM knowledge_points WHERE id=?",
+            (parent_id,), one=True)
+        if not parent:
+            return jsonify({'success': False, 'message': '父节点不存在'})
+
+    if parent is None:
+        nid = ensure_subject(name, g.user_uuid)
+        level = 1
+    else:
+        plevel = parent['level']
+        xueke = parent['xueke'] or parent['name']
+        if plevel >= 3:
+            # 知识点下不能再下钻，改为加同级（同父节点下）
+            parent_id = parent['parent_id']
+            level = 3
+        elif plevel == 1:
+            level = 2
+        else:  # level == 2
+            level = 3
+        nid = ensure_node(name, level, xueke, g.user_uuid, parent_id)
+
+    node = query_db(
+        "SELECT id, parent_id, level, name, xueke FROM knowledge_points WHERE id=?",
+        (nid,), one=True)
+    return jsonify({'success': True, 'node': dict(node),
+                    'message': f'已添加「{name}」'})
 
 
 @app.route('/api/knowledge-points/migrate')
