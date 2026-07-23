@@ -433,6 +433,22 @@ def main():
     # 非数字 ID 详情 → 404
     check("错题详情非数字ID → 404", "GET", "/questions/abc", 404)
 
+    # ---------- 12. 知识点可见性（空 uuid Cookie 自愈） ----------
+    section("12. 空 uuid Cookie 自愈到已有数据")
+    S2 = requests.Session()
+    S2.post(f"{BASE}/login", data={"username": "tim", "password": "tim123"}, allow_redirects=False)
+    # 覆写 uuid Cookie 为空（模拟首次打开生成的空 uuid，但已登录）
+    S2.cookies.set("tim_study_uuid", "00000000-0000-0000-0000-000000000000", domain="127.0.0.1")
+    r = S2.get(f"{BASE}/api/knowledge-points/tree", timeout=20)
+    jt = r.json() if r.status_code == 200 else {}
+    if jt.get("success") and len(jt.get("tree", [])) > 0:
+        PASS += 1
+        print(f"  ✅ 空 uuid Cookie 自愈成功，思维导图可加载 {len(jt['tree'])} 个学科根")
+    else:
+        FAIL += 1
+        print("  ❌ 空 uuid Cookie 仍无法加载知识点数据")
+        ERRORS.append("空 uuid Cookie 未自愈")
+
     # ---------- 清理 ----------
     cleanup()
 

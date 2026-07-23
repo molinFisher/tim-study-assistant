@@ -62,12 +62,24 @@ _setup_cjk_font()
 # ========== UUID 用户标识 ==========
 
 def get_or_create_uuid():
-    """从 Cookie 获取 UUID；无 cookie 时优先复用 DB 已有用户（最多记录的 uuid），
-    仅 DB 全空时才真正创建新 uuid。确保沙箱每次启动都能自动对接到已有数据。"""
+    """从 Cookie 获取 UUID；无 cookie 时优先复用 DB 已有用户（最多记录的 uuid）。
+    若 Cookie 中的 uuid 已无任何错题（例如首次打开时生成的空 uuid），同样回退到
+    数据最多的 uuid，避免「账号存在但思维导图/错题本一片空白」的问题。仅当 DB
+    全空时才真正创建新 uuid。Cookie 会在响应中被写回该 uuid，实现自愈。"""
     user_uuid = request.cookies.get(Config.COOKIE_NAME)
+    from database import query_db
+    if user_uuid:
+        # Cookie 存在但该 uuid 下没有数据 -> 视为空账号，回退到数据最多的 uuid
+        try:
+            cnt = query_db(
+                "SELECT COUNT(*) AS c FROM mistake_records WHERE uuid=? AND status != 'deleted'",
+                (user_uuid,), one=True)
+            if not cnt or cnt['c'] == 0:
+                user_uuid = None
+        except Exception:
+            user_uuid = None
     if not user_uuid:
         try:
-            from database import query_db
             row = query_db(
                 'SELECT uuid, COUNT(*) AS cnt FROM mistake_records '
                 'GROUP BY uuid ORDER BY cnt DESC LIMIT 1', one=True)
