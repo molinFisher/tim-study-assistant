@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}回收站 - Tim 学习助手{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="fw-bold"><i class="bi bi-trash text-danger"></i> 回收站</h2>
+    <a href="{{ url_for('question_list') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> 返回错题本
+    </a>
+</div>
+
+{% if rows %}
+<div id="batch-toolbar" class="d-flex align-items-center gap-2 mb-3" style="display:none;">
+    <span class="badge bg-info" id="sel-count-badge">已选 <span id="sel-count">0</span> 项</span>
+    <button class="btn btn-success btn-sm" onclick="batchAction('restore')"><i class="bi bi-arrow-counterclockwise"></i> 恢复</button>
+    <button class="btn btn-danger btn-sm" onclick="batchAction('purge')"><i class="bi bi-exclamation-triangle"></i> 彻底删除</button>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead><tr>
+            <th><input type="checkbox" id="select-all"></th>
+            <th>#</th><th>学科</th><th>题目</th><th>知识点</th><th>难度</th><th>删除时间</th><th>操作</th>
+        </tr></thead>
+        <tbody>
+            {% for q in rows %}
+            <tr>
+                <td><input type="checkbox" class="row-select" value="{{ q['id'] }}"></td>
+                <td>{{ q['id'] }}</td>
+                <td><span class="badge bg-primary">{{ q['xueke'] }}</span></td>
+                <td><span class="text-truncate d-inline-block" style="max-width:300px;">{{ q.get('timu_plain', q['timu'][:60]) }}</span></td>
+                <td>{% if q['zhishidian'] %}<span class="knowledge-badge">{{ q['zhishidian'][:10] }}</span>{% else %}-{% endif %}</td>
+                <td><span class="difficulty-stars">{{ '⭐' * q['difficulty'] }}</span></td>
+                <td><small class="text-muted">{{ q['updated_at'][:10] if q['updated_at'] else q['bstudio_create_time'][:10] }}</small></td>
+                <td>
+                    <form method="POST" action="/api/questions/restore" class="d-inline restore-form">
+                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                        <input type="hidden" name="ids" value="{{ q['id'] }}">
+                        <button class="btn btn-success btn-sm"><i class="bi bi-arrow-counterclockwise"></i> 恢复</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="text-center py-5">
+    <i class="bi bi-trash" style="font-size: 4rem; color: #ccc;"></i>
+    <h4 class="text-muted mt-3">回收站为空</h4>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// 全选/批量
+(function(){
+    var sa=document.getElementById('select-all'), tb=document.getElementById('batch-toolbar');
+    function gc(){return Array.from(document.querySelectorAll('.row-select:checked')).map(c=>c.value);}
+    function ut(){var n=gc().length;document.getElementById('sel-count').textContent=n;tb.style.display=n>0?'':'none';if(sa)sa.checked=n>0&&n===document.querySelectorAll('.row-select').length;}
+    if(sa)sa.onchange=function(){document.querySelectorAll('.row-select').forEach(c=>c.checked=this.checked);ut();};
+    document.querySelectorAll('.row-select').forEach(c=>c.onchange=ut);
+    ut();
+    window.batchAction=function(type){
+        var ids=gc();if(!ids.length)return alert('请先勾选');
+        if(type==='purge'&&!confirm('彻底删除后不可恢复，确定？'))return;
+        fetch('/api/questions/'+type,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ids})})
+        .then(r=>r.json()).then(d=>{if(d.success)location.reload();else alert(d.message);});
+    };
+})();
+</script>
+{% endblock %}

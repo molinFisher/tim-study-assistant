@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}错题详情 - Tim 学习助手{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('index') }}">首页</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('question_list') }}">错题本</a></li>
+        <li class="breadcrumb-item active">错题 #{{ question['id'] }}</li>
+    </ol>
+</nav>
+
+<div class="row g-3">
+    <!-- 题目主体 -->
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="badge bg-primary fs-6 me-2">{{ question['xueke'] }}</span>
+                    {% if question['zhishidian'] %}
+                    <span class="knowledge-badge">{{ question['zhishidian'] }}</span>
+                    {% endif %}
+                    <span class="badge bg-secondary ms-2">
+                        {{ '⭐' * question['difficulty'] }}
+                    </span>
+                    <span class="badge bg-{{ 'success' if question['status'] == 'mastered' else 'warning' if question['status'] == 'active' else 'secondary' }} ms-1">
+                        {{ {'active': '活跃', 'archived': '已归档', 'mastered': '已掌握'}[question['status']] }}
+                    </span>
+                </div>
+                <small class="text-muted">{{ question['bstudio_create_time'] }}</small>
+            </div>
+            <div class="card-body">
+                <!-- 题目内容 -->
+                <h6 class="fw-bold text-muted mb-2">📝 题目</h6>
+                <div class="p-3 bg-light rounded mb-4" style="white-space: pre-wrap;">{{ question['timu'] }}</div>
+
+                <!-- 题目图片 -->
+                {% if images %}
+                <div class="mb-4">
+                    <h6 class="fw-bold text-muted mb-2">🖼️ 题目图片</h6>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for img in images %}
+                        <div class="border rounded p-1">
+                            <img src="{{ url_for('get_image', question_id=question['id'], image_id=img['id']) }}"
+                                 alt="{{ img['original_name'] }}"
+                                 style="max-width: 300px; max-height: 200px; object-fit: contain;">
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- 答案对比 -->
+                <h6 class="fw-bold text-muted mb-2">⚖️ 答案对比</h6>
+                <div class="answer-compare mb-4">
+                    <div class="answer-box student">
+                        <h6 class="text-warning mb-2">❌ 学生答案</h6>
+                        <div style="white-space: pre-wrap;">{{ question['xueshengdaan'] or '(未填写)' }}</div>
+                    </div>
+                    <div class="answer-box correct">
+                        <h6 class="text-success mb-2">✅ 标准答案</h6>
+                        <div style="white-space: pre-wrap;">{{ question['zhengquedaan'] or '(未填写)' }}</div>
+                    </div>
+                </div>
+
+                <!-- 错误分析 -->
+                {% if question['cuowufenxi'] %}
+                <h6 class="fw-bold text-muted mb-2">🔍 错误分析</h6>
+                <div class="p-3 border-start border-danger border-3 bg-light rounded mb-4" style="white-space: pre-wrap;">{{ question['cuowufenxi'] }}</div>
+                {% endif %}
+
+                <!-- 复习信息 -->
+                <div class="row g-2 mb-3">
+                    <div class="col-md-3">
+                        <small class="text-muted">复习次数</small>
+                        <div class="fw-bold">{{ question['review_count'] }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted">复习阶段</small>
+                        <div class="fw-bold">{{ question['review_stage'] }}/5</div>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted">最后复习</small>
+                        <div class="fw-bold">{{ question['last_review_at'][:10] if question['last_review_at'] else '未复习' }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted">下次复习</small>
+                        <div class="fw-bold text-{{ 'warning' if question['next_review_at'] else 'muted' }}">
+                            {{ question['next_review_at'][:10] if question['next_review_at'] else '待定' }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 操作按钮 -->
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{{ url_for('edit_question', question_id=question['id']) }}" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-pencil"></i> 编辑
+                    </a>
+                    <form method="POST" action="{{ url_for('delete_question', question_id=question['id']) }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                        <button type="submit" class="btn btn-outline-danger btn-sm" data-confirm="确定要删除这道错题吗？此操作不可恢复。">
+                            <i class="bi bi-trash"></i> 删除
+                        </button>
+                    </form>
+                    <div class="btn-group">
+                        <form method="POST" action="{{ url_for('toggle_status', question_id=question['id']) }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                            <input type="hidden" name="status" value="active">
+                            <button type="submit" class="btn btn-outline-warning btn-sm {% if question['status'] == 'active' %}active{% endif %}">活跃</button>
+                        </form>
+                        <form method="POST" action="{{ url_for('toggle_status', question_id=question['id']) }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                            <input type="hidden" name="status" value="mastered">
+                            <button type="submit" class="btn btn-outline-success btn-sm {% if question['status'] == 'mastered' %}active{% endif %}">已掌握</button>
+                        </form>
+                        <form method="POST" action="{{ url_for('toggle_status', question_id=question['id']) }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                            <input type="hidden" name="status" value="archived">
+                            <button type="submit" class="btn btn-outline-secondary btn-sm {% if question['status'] == 'archived' %}active{% endif %}">归档</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 复习记录侧边栏 -->
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-clock-history"></i> 复习记录</h6>
+            </div>
+            <div class="card-body p-0">
+                {% if reviews %}
+                <div class="list-group list-group-flush">
+                    {% for r in reviews %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between">
+                            <small class="fw-bold">{{ r['review_date'] }}</small>
+                            <span class="badge bg-{{ 'success' if r['result'] == 'correct' else 'danger' if r['result'] == 'incorrect' else 'warning' }}">
+                                {{ {'correct': '✓ 正确', 'incorrect': '✗ 错误', 'partial': '△ 部分'}[r['result']] }}
+                            </span>
+                        </div>
+                        {% if r['notes'] %}
+                        <small class="text-muted">{{ r['notes'][:100] }}</small>
+                        {% endif %}
+                        {% if r['time_spent'] %}
+                        <small class="text-muted d-block">耗时 {{ r['time_spent'] }} 秒</small>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-3 text-muted">
+                    <small>暂无复习记录</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 语音笔记 -->
+    <div class="col-lg-4 mt-3 mt-lg-0">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-mic"></i> 语音笔记</h6>
+            </div>
+            <div class="card-body text-center">
+                <div id="voice-player" {% if not question['voice_data'] %}style="display:none"{% endif %}>
+                    <audio id="voice-audio" controls src="{{ url_for('voice_note', question_id=question['id']) }}" style="width:100%;max-width:280px;"></audio>
+                    <button class="btn btn-outline-danger btn-sm mt-2" onclick="deleteVoice({{ question['id'] }})">
+                        <i class="bi bi-trash"></i> 删除
+                    </button>
+                </div>
+                <div id="voice-recorder" {% if question['voice_data'] %}style="display:none"{% endif %}>
+                    <button id="record-btn" class="btn btn-danger btn-lg rounded-circle" onclick="toggleRecord()"
+                            style="width:64px;height:64px;" title="点击录音">
+                        <i class="bi bi-mic-fill fs-3"></i>
+                    </button>
+                    <p class="text-muted small mt-2" id="record-status">点击开始录音</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if similar %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold">
+                <i class="bi bi-lightbulb text-warning"></i> 相似错题推荐
+            </div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush">
+                    {% for s in similar %}
+                    <a href="{{ url_for('question_detail', question_id=s['id']) }}" class="list-group-item list-group-item-action py-2">
+                        <span class="badge bg-primary me-2">{{ s['xueke'] }}</span>
+                        {{ s.get('timu_plain', s['timu'][:60]) }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/voice_recorder.js') }}"></script>
+{% endblock %}

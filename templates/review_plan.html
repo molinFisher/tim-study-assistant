@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+{% block title %}复习计划 - Tim 学习助手{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="fw-bold mb-0"><i class="bi bi-arrow-repeat text-primary"></i> 复习计划</h2>
+    <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#configModal">
+        <i class="bi bi-gear"></i> 复习设置
+    </button>
+</div>
+
+<!-- 复习状态 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card stat-card warning">
+            <div class="card-body text-center">
+                <div class="stat-value" id="remaining-count">{{ due_reviews|length }}</div>
+                <div class="stat-label">今日待复习</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card success">
+            <div class="card-body text-center">
+                <div class="stat-value" id="reviewed-count">{{ reviewed_today }}</div>
+                <div class="stat-label">今日已完成</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card primary">
+            <div class="card-body text-center">
+                <div class="stat-value">{{ 'SM-2' if review_algorithm == 'sm2' else '艾宾浩斯' }}</div>
+                <div class="stat-label">当前算法</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 一键操作 -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <span></span>
+    <button class="btn btn-outline-success btn-sm" onclick="addAllToReview()">
+        <i class="bi bi-play-fill"></i> 未排期错题全部加入复习
+    </button>
+</div>
+
+<!-- 筛选 & 排序 -->
+<div class="filter-bar mb-3">
+    <form method="GET" class="row g-2 align-items-end">
+        <div class="col-md-4">
+            <label class="form-label small fw-bold">学科</label>
+            <select name="xueke" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="">全部学科</option>
+                {% for s in subjects %}
+                <option value="{{ s }}" {% if xueke_filter == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label small fw-bold">排序方式</label>
+            <select name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="time" {% if sort == 'time' %}selected{% endif %}>按复习时间 (早→晚)</option>
+                <option value="priority" {% if sort == 'priority' %}selected{% endif %}>按优先级 (难→易)</option>
+            </select>
+        </div>
+        <div class="col-md-4 text-end">
+            {% if xueke_filter or sort != 'time' %}
+            <a href="{{ url_for('review_plan') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-counterclockwise"></i> 重置
+            </a>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+<!-- 复习卡片区域 -->
+<div id="review-cards-container">
+    {% if due_reviews %}
+    {% for q in due_reviews %}
+    <div class="review-card-item mb-4" id="review-card-{{ q['id'] }}">
+        <div class="card review-card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <div>
+                        <span class="badge bg-primary">{{ q['xueke'] }}</span>
+                        {% if q['zhishidian'] %}
+                        <span class="knowledge-badge">{{ q['zhishidian'] }}</span>
+                        {% endif %}
+                        <span class="badge bg-info ms-1">第 {{ q['review_count'] + 1 }} 次复习</span>
+                    </div>
+                    <span class="difficulty-stars">{{ '⭐' * q['difficulty'] }}</span>
+                </div>
+
+                <!-- 题目内容 -->
+                <div class="question-content" style="white-space: pre-wrap;">{{ q['timu'] }}</div>
+
+                <!-- 图片附件 -->
+                {% if review_images and review_images[q['id']] %}
+                <div class="mb-3 d-flex flex-wrap gap-2">
+                    {% for img in review_images[q['id']] %}
+                    <div class="review-image-item">
+                        <img src="{{ url_for('get_image', question_id=q['id'], image_id=img['id']) }}"
+                             style="max-width:200px; max-height:200px; cursor:zoom-in; border-radius:8px; border:1px solid #dee2e6;"
+                             onclick="this.classList.toggle('zoomed')" title="点击放大">
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <!-- 图片 -->
+                {% set images = namespace(list=[]) %}
+                {# 图片在客户端通过 API 动态加载，这里简化处理 #}
+
+                <!-- 答案区域（默认隐藏） -->
+                <div id="answer-{{ q['id'] }}" class="mt-3">
+                    <div class="answer-compare">
+                        <div class="answer-box student">
+                            <h6 class="text-warning mb-2">你的答案</h6>
+                            <div style="white-space: pre-wrap;">{{ q['xueshengdaan'] or '(未填写)' }}</div>
+                        </div>
+                        <div class="answer-box correct">
+                            <h6 class="text-success mb-2">标准答案</h6>
+                            <div style="white-space: pre-wrap;">{{ q['zhengquedaan'] or '(未填写)' }}</div>
+                        </div>
+                    </div>
+                    {% if q['cuowufenxi'] %}
+                    <div class="mt-3 p-3 border-start border-danger border-3 bg-light rounded">
+                        <h6 class="text-danger mb-1">错误分析</h6>
+                        <div style="white-space: pre-wrap;">{{ q['cuowufenxi'] }}</div>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- 操作按钮 -->
+                <div class="text-center mb-2">
+                    <button class="btn btn-outline-info btn-sm" onclick="toggleAnswer({{ q['id'] }})" id="toggle-btn-{{ q['id'] }}">
+                        <i class="bi bi-eye"></i> 显示答案
+                    </button>
+                </div>
+
+                <div class="review-actions">
+                    <button class="btn btn-danger" onclick="submitReview({{ q['id'] }}, 'incorrect')">
+                        <i class="bi bi-x-circle"></i> 不会
+                    </button>
+                    <button class="btn btn-warning" onclick="submitReview({{ q['id'] }}, 'partial')">
+                        <i class="bi bi-dash-circle"></i> 部分会
+                    </button>
+                    <button class="btn btn-success" onclick="submitReview({{ q['id'] }}, 'correct')">
+                        <i class="bi bi-check-circle"></i> 完全会
+                    </button>
+                </div>
+
+                <!-- 备注 -->
+                <div class="mt-3">
+                    <input type="text" id="review-notes-{{ q['id'] }}" class="form-control form-control-sm"
+                           placeholder="复习备注（可选）...">
+                </div>
+
+                <input type="hidden" id="review-time-spent-{{ q['id'] }}" value="0">
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="text-center py-5">
+        <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
+        <h4 class="text-muted mt-3">今日没有需要复习的错题</h4>
+        <p class="text-muted">
+            {% if reviewed_today > 0 %}
+            你已完成今日所有复习任务，太棒了！
+            {% else %}
+            添加更多错题后，系统会自动为你安排复习计划。
+            {% endif %}
+        </p>
+        <a href="{{ url_for('add_question') }}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> 添加错题
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 复习日历热力图 -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h6 class="mb-0"><i class="bi bi-calendar-heat"></i> 最近 60 天复习活跃度</h6>
+    </div>
+    <div class="card-body">
+        <div class="calendar-heatmap">
+            {% for day, count in calendar_data.items() %}
+            <div class="calendar-day {% if count >= 4 %}level-4{% elif count >= 3 %}level-3{% elif count >= 2 %}level-2{% elif count >= 1 %}level-1{% endif %}"
+                 title="{{ day }}: {{ count }} 次复习"></div>
+            {% endfor %}
+        </div>
+        <div class="d-flex justify-content-end align-items-center gap-1 mt-2">
+            <small class="text-muted">少</small>
+            <div class="calendar-day" style="width: 12px; height: 12px;"></div>
+            <div class="calendar-day level-1" style="width: 12px; height: 12px;"></div>
+            <div class="calendar-day level-2" style="width: 12px; height: 12px;"></div>
+            <div class="calendar-day level-3" style="width: 12px; height: 12px;"></div>
+            <div class="calendar-day level-4" style="width: 12px; height: 12px;"></div>
+            <small class="text-muted">多</small>
+        </div>
+    </div>
+</div>
+
+<!-- 复习设置弹窗 -->
+<div class="modal fade" id="configModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('review_config') }}">
+                <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-gear"></i> 复习设置</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">复习算法</label>
+                        <select name="algorithm" class="form-select">
+                            <option value="sm2" {% if review_algorithm == 'sm2' %}selected{% endif %}>
+                                SM-2 间隔重复（推荐）— 间隔 1/3/7/14/30/60 天
+                            </option>
+                            <option value="ebbinghaus" {% if review_algorithm == 'ebbinghaus' %}selected{% endif %}>
+                                艾宾浩斯遗忘曲线 — 5分/30分/12时/1天/2天/4天/7天/15天
+                            </option>
+                        </select>
+                        <small class="text-muted">SM-2 适合长期记忆，艾宾浩斯适合短期突击。切换后新提交的复习使用新算法。</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">每日复习上限</label>
+                        <input type="number" name="daily_limit" class="form-control"
+                               value="{{ user_config['daily_review_limit'] }}" min="5" max="100">
+                        <small class="text-muted">超过上限的错题将顺延至明天复习</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存设置</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 复习计时器支持 -->
+<script>
+// 为每个复习卡片启动独立计时
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.review-card-item').forEach(card => {
+        const mistakeId = card.id.replace('review-card-', '');
+        let startTime = Date.now();
+
+        // 覆写 submitReview 使其包含该卡片的计时
+        const buttons = card.querySelectorAll('.review-actions button');
+        buttons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                const timeSpent = Math.round((Date.now() - startTime) / 1000);
+                document.getElementById('review-time-spent').value = timeSpent;
+            });
+        });
+    });
+});
+</script>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/review_plan.js') }}"></script>
+{% endblock %}

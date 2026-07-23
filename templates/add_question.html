@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}添加错题 - Tim 学习助手{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('index') }}">首页</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('question_list') }}">错题本</a></li>
+        <li class="breadcrumb-item active">添加错题</li>
+    </ol>
+</nav>
+
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-plus-circle"></i> 添加新错题</h5>
+            </div>
+            <div class="card-body">
+                <!-- OCR 图片导入入口 -->
+                <div class="alert alert-info d-flex align-items-center mb-3" role="alert">
+                    <i class="bi bi-camera-fill me-2 fs-5"></i>
+                    <div class="flex-grow-1">
+                        <strong>试试图片导入？</strong> 拍照或上传试卷图片，自动识别错题内容。
+                    </div>
+                    <a href="{{ url_for('ocr_import') }}" class="btn btn-outline-info btn-sm flex-shrink-0">
+                        <i class="bi bi-image"></i> 图片导入
+                    </a>
+                </div>
+
+                <form method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                    <!-- 学科 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">学科 <span class="text-danger">*</span></label>
+                        <select name="xueke" class="form-select" required>
+                            <option value="">请选择学科</option>
+                            {% for s in subjects %}
+                            <option value="{{ s }}">{{ s }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- 题目内容 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">题目内容 <span class="text-danger">*</span></label>
+                        <textarea name="timu" class="form-control" rows="4" placeholder="请输入题目完整内容..." required></textarea>
+                    </div>
+
+                    <!-- 答案对比 -->
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">学生答案</label>
+                            <textarea name="xueshengdaan" class="form-control" rows="3" placeholder="你当时的答案..."></textarea>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">标准答案</label>
+                            <textarea name="zhengquedaan" class="form-control" rows="3" placeholder="正确的答案..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- 错误分析 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">错误分析</label>
+                        <textarea name="cuowufenxi" class="form-control" rows="3" placeholder="分析错误原因，总结经验教训..."></textarea>
+                    </div>
+
+                    <!-- 知识点和难度 -->
+                    <div class="row">
+                        <div class="col-md-8 mb-3">
+                            <label class="form-label fw-bold">知识点标签</label>
+                            <input type="text" name="zhishidian" class="form-control"
+                                   list="kp-list" placeholder="输入或选择知识点..."
+                                   autocomplete="off">
+                            <datalist id="kp-list">
+                                {% for kp in knowledge_points %}
+                                <option value="{{ kp['zhishidian'] }}">
+                                {% endfor %}
+                            </datalist>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label fw-bold">难度等级</label>
+                            <select name="difficulty" class="form-select">
+                                <option value="1">⭐ 非常简单</option>
+                                <option value="2">⭐⭐ 简单</option>
+                                <option value="3" selected>⭐⭐⭐ 中等</option>
+                                <option value="4">⭐⭐⭐⭐ 困难</option>
+                                <option value="5">⭐⭐⭐⭐⭐ 非常困难</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- 图片上传 -->
+                    <div class="mb-3 image-upload-area">
+                        <label class="form-label fw-bold">题目图片（可选）</label>
+                        <input type="file" name="images" class="form-control image-upload-input"
+                               accept="image/*" multiple>
+                        <small class="text-muted">支持 PNG、JPG、GIF、WebP，可多选。小于 100KB 自动存数据库，大于存文件。</small>
+                        <div class="image-preview-container"></div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> 保存错题
+                        </button>
+                        <a href="{{ url_for('question_list') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-lg"></i> 取消
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

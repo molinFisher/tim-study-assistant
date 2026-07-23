@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}首页 - Tim 学习助手{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h2 class="fw-bold"><i class="bi bi-speedometer2 text-primary"></i> 学习仪表盘</h2>
+        <p class="text-muted">欢迎回来，{{ session.username }}！这是你的学习概览。</p>
+    </div>
+</div>
+
+<!-- 统计卡片 -->
+<div class="row g-3 mb-4">
+    <div class="col-xl-3 col-md-6">
+        <div class="card stat-card primary h-100">
+            <div class="card-body">
+                <div class="stat-icon"><i class="bi bi-journal-x"></i></div>
+                <div class="stat-value">{{ total_questions }}</div>
+                <div class="stat-label">总错题数</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card stat-card warning h-100">
+            <div class="card-body">
+                <div class="stat-icon"><i class="bi bi-arrow-repeat"></i></div>
+                <div class="stat-value">{{ due_today }}</div>
+                <div class="stat-label">今日待复习</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card stat-card success h-100">
+            <div class="card-body">
+                <div class="stat-icon"><i class="bi bi-check-circle"></i></div>
+                <div class="stat-value">{{ mastered_questions }}</div>
+                <div class="stat-label">已掌握</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card stat-card danger h-100">
+            <div class="card-body">
+                <div class="stat-icon"><i class="bi bi-plus-circle"></i></div>
+                <div class="stat-value">{{ week_new }}</div>
+                <div class="stat-label">本周新增</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 进行中的计划 -->
+{% if active_plans %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold"><i class="bi bi-calendar-check text-warning"></i> 进行中的学习计划</div>
+            <div class="card-body py-2">
+                <div class="row g-2">
+                    {% for p in active_plans %}
+                    <div class="col-md-4">
+                        <a href="{{ url_for('study_plans') }}" class="text-decoration-none">
+                            <div class="p-2 border rounded bg-light">
+                                <span class="badge bg-{{ 'warning' if p['priority']>=4 else 'info' }}">P{{ p['priority'] }}</span>
+                                <strong>{{ p['title'] }}</strong>
+                                {% if p['target_date'] %}<small class="text-muted float-end">{{ p['target_date'] }}</small>{% endif %}
+                            </div>
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 额外指标行 -->
+<div class="row g-3 mb-4">
+    <div class="col-xl-3 col-md-6">
+        <div class="card stat-card h-100" style="background: linear-gradient(135deg,#fff3e0,#ffe0b2);">
+            <div class="card-body text-center">
+                <span style="font-size:2rem;">{% if streak > 0 %}🔥{% else %}📅{% endif %}</span>
+                <h4 class="fw-bold mb-1">{% if streak > 0 %}{{ streak }} 天连击{% else %}从今天开始{% endif %}</h4>
+                <small class="text-muted">{% if streak > 0 %}持续学习！{% else %}今天有 {{ due_today }} 题待复习{% endif %}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card stat-card h-100" style="background: linear-gradient(135deg,#e8f5e9,#c8e6c9);">
+            <div class="card-body text-center">
+                <span style="font-size:2rem;">⏱️</span>
+                <h4 class="fw-bold mb-1">{{ today_minutes }} 分钟</h4>
+                <small class="text-muted">今日复习时长</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card stat-card h-100" style="background: linear-gradient(135deg,#e3f2fd,#bbdefb);">
+            <div class="card-body text-center">
+                <span style="font-size:2rem;">📖</span>
+                <h4 class="fw-bold mb-1">{{ total_questions }}</h4>
+                <small class="text-muted">已掌握 {{ mastered_questions }} / {{ total_questions }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6">
+        <div class="card stat-card h-100" style="background: linear-gradient(135deg,#fce4ec,#f8bbd0);">
+            <div class="card-body text-center">
+                <span style="font-size:2rem;">🎯</span>
+                <h4 class="fw-bold mb-1">{{ active_questions }}</h4>
+                <small class="text-muted">活跃错题</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <!-- 最近错题 -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-bold"><i class="bi bi-clock-history"></i> 最近错题</span>
+                <a href="{{ url_for('add_question') }}" class="btn btn-primary btn-sm">
+                    <i class="bi bi-plus-lg"></i> 添加错题
+                </a>
+            </div>
+            <div class="card-body p-0">
+                {% if recent_questions %}
+                <div class="list-group list-group-flush">
+                    {% for q in recent_questions %}
+                    <a href="{{ url_for('question_detail', question_id=q['id']) }}" class="list-group-item list-group-item-action">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1 me-3">
+                                <span class="badge bg-primary me-2">{{ q['xueke'] }}</span>
+                                {% if q['zhishidian'] %}
+                                <span class="knowledge-badge">{{ q['zhishidian'] }}</span>
+                                {% endif %}
+                                <span class="d-block mt-1 text-truncate" style="max-width: 350px;">{{ q.get('timu_plain', q['timu'][:80]) }}</span>
+                            </div>
+                            <small class="text-muted text-nowrap">{{ q['bstudio_create_time'][:10] }}</small>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                    <p class="mt-2">还没有错题记录，<a href="{{ url_for('add_question') }}">添加第一道错题</a>吧！</p>
+                </div>
+                {% endif %}
+            </div>
+            {% if recent_questions %}
+            <div class="card-footer text-center">
+                <a href="{{ url_for('question_list') }}" class="text-decoration-none">查看全部错题 <i class="bi bi-arrow-right"></i></a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- 今日待复习 -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-bold"><i class="bi bi-calendar-check"></i> 今日待复习</span>
+                <a href="{{ url_for('review_plan') }}" class="btn btn-outline-warning btn-sm">
+                    开始复习 <i class="bi bi-arrow-right"></i>
+                </a>
+            </div>
+            <div class="card-body p-0">
+                {% if due_reviews %}
+                <div class="list-group list-group-flush">
+                    {% for q in due_reviews %}
+                    <a href="{{ url_for('question_detail', question_id=q['id']) }}" class="list-group-item list-group-item-action">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1 me-3">
+                                <span class="badge bg-warning text-dark me-2">{{ q['xueke'] }}</span>
+                                <span class="badge bg-info me-2">复习 {{ q['review_count'] + 1 }} 次</span>
+                                <span class="d-block mt-1 text-truncate" style="max-width: 350px;">{{ q.get('timu_plain', q['timu'][:80]) }}</span>
+                            </div>
+                            <small class="text-muted text-nowrap">下次: {{ q['next_review_at'][:10] if q['next_review_at'] else '今日' }}</small>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-emoji-smile" style="font-size: 2rem;"></i>
+                    <p class="mt-2">今天没有需要复习的错题，继续保持！</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 学科分布图表 -->
+{% if pie_chart %}
+<div class="row mt-4">
+    <div class="col-lg-6 mx-auto">
+        <div class="chart-container">
+            <h5 class="fw-bold mb-3"><i class="bi bi-pie-chart"></i> 学科错题分布</h5>
+            <img src="data:image/png;base64,{{ pie_chart }}" alt="学科分布" class="img-fluid">
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

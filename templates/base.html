@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Tim 学习助手{% endblock %}</title>
+    <!-- 暗色模式：在 DOM 渲染前执行，消除闪烁 -->
+    <script>
+    (function(){var t=localStorage.getItem('theme')||'light';if(t==='dark'){document.documentElement.setAttribute('data-bs-theme','dark');}})();
+    </script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <meta name="csrf-token" content="{{ session.get('csrf_token', '') }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="{{ url_for('index') }}">
+                <i class="bi bi-journal-bookmark-fill"></i> Tim 学习助手
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="{{ url_for('index') }}">
+                            <i class="bi bi-house-door"></i> 首页
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path.startswith('/questions') %}active{% endif %}" href="{{ url_for('question_list') }}">
+                            <i class="bi bi-journal-x"></i> 错题本
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/knowledge-points' %}active{% endif %}" href="{{ url_for('knowledge_points') }}">
+                            <i class="bi bi-tags"></i> 知识点
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/knowledge-matrix' %}active{% endif %}" href="{{ url_for('knowledge_matrix') }}">
+                            <i class="bi bi-grid-3x3-gap"></i> 掌握矩阵
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path.startswith('/study-plans') %}active{% endif %}" href="{{ url_for('study_plans') }}">
+                            <i class="bi bi-calendar-check"></i> 学习计划
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path.startswith('/review') %}active{% endif %}" href="{{ url_for('review_plan') }}">
+                            <i class="bi bi-arrow-repeat"></i> 复习
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/statistics' %}active{% endif %}" href="{{ url_for('statistics') }}">
+                            <i class="bi bi-bar-chart"></i> 统计
+                        </a>
+                    </li>
+                </ul>
+                <button id="dark-toggle" class="btn btn-outline-light btn-sm ms-2" title="切换暗色模式" onclick="toggleDark()">🌙</button>
+                {% if session.username %}
+                <span class="navbar-text text-light ms-2 small">{{ session.username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm ms-1">退出</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主体内容 -->
+    <main class="container py-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-light py-3 mt-auto border-top">
+        <div class="container text-center text-muted small">
+            Tim 学习助手 &mdash; 让每一道错题都成为进步的阶梯
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]})"></script>
+    <script>
+    // CSRF Token: 自动给所有 POST/PUT/DELETE fetch 加头
+    (function(){var t=document.querySelector('meta[name="csrf-token"]')?.content;if(t){var _fetch=window.fetch;window.fetch=function(u,o){o=o||{};if(o.method&&['POST','PUT','DELETE'].includes(o.method.toUpperCase())){o.headers=o.headers||{};o.headers['X-CSRF-Token']=t;}return _fetch.call(this,u,o);};}})();
+    // 暗色模式
+    (function(){if(localStorage.getItem('theme')==='dark')document.getElementById('dark-toggle').textContent='☀️';})();
+    function toggleDark(){var t=document.documentElement.getAttribute('data-bs-theme')==='dark'?'light':'dark';document.documentElement.setAttribute('data-bs-theme',t);localStorage.setItem('theme',t);document.getElementById('dark-toggle').textContent=t==='dark'?'☀️':'🌙';}
+    // 复习通知提醒
+    if('Notification' in window && Notification.permission==='default'){setTimeout(function(){Notification.requestPermission()},5000);}
+    function checkNotify(){var h=new Date().getHours();if((h===9||h===20)&&Notification.permission==='granted'){new Notification('Tim学习助手',{body:'该复习错题啦！打开复习计划页开始今天的复习吧 🔥',icon:'/static/favicon.ico'});}}
+    setInterval(checkNotify,60000);checkNotify();
+    </script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

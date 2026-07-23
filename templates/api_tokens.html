@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}API Token 管理 - Tim 学习助手{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-key"></i> API Token 管理</h2>
+    <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> 返回首页
+    </a>
+</div>
+
+<div class="row">
+    <!-- 左侧：创建 Token -->
+    <div class="col-lg-5 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <i class="bi bi-plus-circle"></i> 创建 API Token
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info small">
+                    <i class="bi bi-info-circle"></i>
+                    API Token 用于外部程序通过 <strong>Bearer Token</strong> 认证调用批量导入接口。
+                    创建后<b>仅显示一次</b>明文，请立即复制保存。
+                </div>
+                <form id="create-token-form">
+                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                    <div class="mb-3">
+                        <label for="token-name" class="form-label">名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="token-name" name="name"
+                               placeholder="例如：桌面客户端、手机App" required maxlength="50">
+                    </div>
+                    <div class="mb-3">
+                        <label for="token-desc" class="form-label">描述</label>
+                        <input type="text" class="form-control" id="token-desc" name="description"
+                               placeholder="可选，说明用途" maxlength="200">
+                    </div>
+                    <div class="mb-3">
+                        <label for="token-rate" class="form-label">速率限制（次/分钟）</label>
+                        <input type="number" class="form-control" id="token-rate" name="rate_limit"
+                               value="60" min="1" max="10000" style="max-width:160px">
+                        <div class="form-text">该 Token 每分钟最多允许的请求次数</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-key-fill"></i> 生成 Token
+                    </button>
+                </form>
+
+                <!-- 生成结果（隐藏） -->
+                <div id="token-result" class="mt-3" style="display:none">
+                    <div class="alert alert-success">
+                        <strong><i class="bi bi-check-circle"></i> Token 创建成功！</strong>
+                        <p class="mb-1 mt-2 small text-muted">请立即复制保存，关闭后<b>无法再次查看</b>明文 Token：</p>
+                        <div class="input-group mt-2">
+                            <input type="text" id="token-value" class="form-control font-monospace" readonly
+                                   style="font-size:13px">
+                            <button class="btn btn-outline-secondary" onclick="copyToken()" id="copy-btn">
+                                <i class="bi bi-clipboard"></i> 复制
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧：Token 列表 -->
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-list-ul"></i> 已有 Token</span>
+                <span class="badge bg-light text-dark" id="token-count">{{ tokens|length }} 个</span>
+            </div>
+            <div class="card-body p-0">
+                {% if tokens %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>名称</th>
+                                <th>Token</th>
+                                <th>状态</th>
+                                <th>限速</th>
+                                <th>最后使用</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for t in tokens %}
+                            <tr class="{% if not t.is_active %}table-secondary{% endif %}">
+                                <td>
+                                    <strong>{{ t.name or '(未命名)' }}</strong>
+                                    {% if t.description %}
+                                    <br><small class="text-muted">{{ t.description }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <code class="small">{{ t.token_prefix }}****</code>
+                                </td>
+                                <td>
+                                    {% if t.is_active %}
+                                    <span class="badge bg-success">启用</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">已停用</span>
+                                    {% endif %}
+                                    {% if t.expires_at %}
+                                    <br><small class="text-muted">过期: {{ t.expires_at[:10] }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>{{ t.rate_limit }}/min</td>
+                                <td>
+                                    {% if t.last_used_at %}
+                                    <small>{{ t.last_used_at[:16] }}</small>
+                                    {% else %}
+                                    <small class="text-muted">从未使用</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if t.is_active %}
+                                    <button class="btn btn-sm btn-outline-danger revoke-btn"
+                                            data-id="{{ t.id }}" data-name="{{ t.name or '(未命名)' }}">
+                                        <i class="bi bi-x-circle"></i> 撤销
+                                    </button>
+                                    {% else %}
+                                    <span class="text-muted small">已撤销</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="bi bi-key" style="font-size:3rem"></i>
+                    <p class="mt-2">暂无 API Token，请先创建</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- API 使用说明 -->
+        <div class="card shadow-sm mt-3">
+            <div class="card-header bg-info text-white">
+                <i class="bi bi-book"></i> API 使用说明
+            </div>
+            <div class="card-body small">
+                <h6>批量导入错题</h6>
+                <pre class="bg-light p-2 rounded" style="font-size:12px"><code>POST /api/v1/questions/import
+Authorization: Bearer YOUR_TOKEN
+Content-Type: application/json
+
+{
+  "questions": [
+    {
+      "xueke": "数学",
+      "timu": "1 + 1 = ?",
+      "zhengquedaan": "2",
+      "cuowufenxi": "计算错误",
+      "zhishidian": "10以内加法",
+      "difficulty": 1
+    }
+  ]
+}</code></pre>
+                <h6>连通性测试</h6>
+                <pre class="bg-light p-2 rounded" style="font-size:12px"><code>GET /api/v1/ping
+Authorization: Bearer YOUR_TOKEN</code></pre>
+                <p class="text-muted mb-0">
+                    <strong>学科可选值</strong>: {{ ', '.join(subjects) }}<br>
+                    <strong>difficulty</strong>: 1-5（默认 1）<br>
+                    <strong>必填字段</strong>: xueke、timu
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    const form = document.getElementById('create-token-form');
+    const result = document.getElementById('token-result');
+    const tokenValue = document.getElementById('token-value');
+    const copyBtn = document.getElementById('copy-btn');
+
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const data = {
+            name: form.name.value.trim(),
+            description: form.description.value.trim(),
+            rate_limit: parseInt(form.rate_limit.value) || 60
+        };
+        if (!data.name) { alert('请输入 Token 名称'); return; }
+
+        try {
+            const resp = await fetch('/api/settings/api-tokens', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                },
+                body: JSON.stringify(data)
+            });
+            const json = await resp.json();
+            if (json.success) {
+                tokenValue.value = json.data.token;
+                result.style.display = 'block';
+                copyBtn.textContent = '复制';
+                copyBtn.className = 'btn btn-outline-secondary';
+                form.reset();
+                // 1.5秒后刷新页面显示新 token
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                alert('创建失败: ' + (json.message || '未知错误'));
+            }
+        } catch (err) {
+            alert('请求失败: ' + err.message);
+        }
+    });
+
+    // 撤销按钮
+    document.querySelectorAll('.revoke-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const id = this.dataset.id;
+            const name = this.dataset.name;
+            if (!confirm(`确定要撤销 Token「${name}」吗？撤销后所有使用该 Token 的客户端将无法访问 API。`)) return;
+
+            try {
+                const resp = await fetch(`/api/settings/api-tokens/${id}/revoke`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                    }
+                });
+                const json = await resp.json();
+                if (json.success) {
+                    location.reload();
+                } else {
+                    alert('撤销失败: ' + (json.message || '未知错误'));
+                }
+            } catch (err) {
+                alert('请求失败: ' + err.message);
+            }
+        });
+    });
+})();
+
+function copyToken() {
+    const input = document.getElementById('token-value');
+    input.select();
+    input.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(input.value).then(() => {
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = '已复制 ✓';
+        btn.className = 'btn btn-success';
+    }).catch(() => {
+        alert('复制失败，请手动复制');
+    });
+}
+</script>
+{% endblock %}

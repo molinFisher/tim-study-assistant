@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}图片导入错题 - Tim 学习助手{% endblock %}
+
+{% block extra_head %}
+<link href="{{ url_for('static', filename='css/ocr_import.css') }}" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('index') }}">首页</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('question_list') }}">错题本</a></li>
+        <li class="breadcrumb-item active">图片导入</li>
+    </ol>
+</nav>
+
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+
+        <!-- 页面标题 -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4 class="fw-bold mb-0"><i class="bi bi-camera-fill text-info"></i> 图片导入错题</h4>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('doc_import') }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-file-earmark-text"></i> 文档导入
+                </a>
+                <a href="{{ url_for('add_question') }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-pencil"></i> 手动输入
+                </a>
+            </div>
+        </div>
+
+        <!-- ===== 步骤 1: 图片上传区 ===== -->
+        <div id="upload-section" class="card mb-3">
+            <div class="card-body text-center py-4">
+                <div id="drop-zone" class="ocr-drop-zone">
+                    <i class="bi bi-cloud-upload" style="font-size: 3rem; color: #0dcaf0;"></i>
+                    <h5 class="mt-2">拖拽图片到此处，或点击选择</h5>
+                    <p class="text-muted small">支持 PNG、JPG、JPEG 格式，单张或多张</p>
+                    <p class="text-muted small">适合拍照上传试卷、练习册上的错题</p>
+                    <input type="file" id="file-input" accept="image/png,image/jpeg,image/jpg" multiple hidden>
+                    <button type="button" class="btn btn-info mt-2" onclick="document.getElementById('file-input').click()">
+                        <i class="bi bi-image"></i> 选择图片
+                    </button>
+                </div>
+
+                <!-- 图片预览 -->
+                <div id="image-preview-grid" class="ocr-preview-grid mt-3" style="display:none;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="fw-bold small">已选择 <span id="preview-count">0</span> 张图片</span>
+                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="clearImages()">
+                            <i class="bi bi-x-circle"></i> 清除
+                        </button>
+                    </div>
+                    <div id="preview-container" class="d-flex flex-wrap gap-2 justify-content-center"></div>
+                </div>
+
+                <!-- 开始识别按钮 -->
+                <button id="start-ocr-btn" class="btn btn-primary btn-lg mt-3" onclick="startOCR()" disabled>
+                    <i class="bi bi-cpu"></i> 开始智能识别
+                </button>
+            </div>
+        </div>
+
+        <!-- ===== 步骤 2: 识别进度区 ===== -->
+        <div id="progress-section" class="card mb-3" style="display:none;">
+            <div class="card-body text-center py-4">
+                <div class="ocr-progress-steps">
+                    <div class="progress-step" id="step-preprocess">
+                        <div class="step-icon"><i class="bi bi-image"></i></div>
+                        <div class="step-label">预处理</div>
+                    </div>
+                    <div class="progress-line"></div>
+                    <div class="progress-step" id="step-ocr">
+                        <div class="step-icon"><i class="bi bi-eye"></i></div>
+                        <div class="step-label">OCR 识别</div>
+                    </div>
+                    <div class="progress-line"></div>
+                    <div class="progress-step" id="step-parse">
+                        <div class="step-icon"><i class="bi bi-cpu"></i></div>
+                        <div class="step-label">智能提取</div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <div class="spinner-border text-info" role="status">
+                        <span class="visually-hidden">识别中...</span>
+                    </div>
+                    <p id="progress-message" class="mt-2 text-muted">正在初始化...</p>
+                    <div class="progress" style="height: 6px; max-width: 300px; margin: 0 auto;">
+                        <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                             style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== 步骤 3: 识别结果编辑区（多题卡片） ===== -->
+        <div id="result-section" class="mb-3" style="display:none;">
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span class="fw-bold">
+                        <i class="bi bi-check-circle text-success"></i>
+                        识别到 <span id="question-count">0</span> 道题
+                    </span>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-success btn-sm" onclick="saveSelectedQuestions()">
+                            <i class="bi bi-check-all"></i> 保存选中
+                        </button>
+                        <button class="btn btn-primary btn-sm" onclick="saveAllQuestions()">
+                            <i class="bi bi-save"></i> 保存全部
+                        </button>
+                        <button class="btn btn-outline-info btn-sm" onclick="retryOCR()">
+                            <i class="bi bi-arrow-repeat"></i> 重新识别
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 题目卡片列表 -->
+            <div id="question-cards-container"></div>
+
+            <!-- 原始 OCR 文本（默认折叠） -->
+            <div class="card mt-3">
+                <div class="card-body">
+                    <button class="btn btn-outline-secondary btn-sm mb-2" type="button" onclick="toggleRawText()">
+                        <i class="bi bi-file-text"></i> 查看原始识别文本
+                    </button>
+                    <pre id="raw-ocr-text" class="p-3 bg-light rounded small" style="max-height: 200px; overflow-y: auto; white-space: pre-wrap; display:none;"></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== 错误提示区 ===== -->
+        <div id="error-section" class="alert alert-danger" style="display:none;">
+            <i class="bi bi-exclamation-circle-fill me-2"></i>
+            <span id="error-message"></span>
+            <div class="mt-2">
+                <button class="btn btn-outline-danger btn-sm" onclick="retryOCR()">重试</button>
+                <a href="{{ url_for('add_question') }}" class="btn btn-outline-secondary btn-sm">手动输入</a>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/ocr_result.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ocr_import.js') }}"></script>
+{% endblock %}

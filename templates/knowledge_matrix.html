@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}知识掌握矩阵 - Tim 学习助手{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="fw-bold mb-0"><i class="bi bi-grid-3x3-gap text-primary"></i> 知识掌握矩阵</h2>
+    <a href="{{ url_for('knowledge_points') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-tags"></i> 知识点管理
+    </a>
+</div>
+
+{% if rows %}
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>知识点</th>
+                        <th class="text-center" style="width:60px;">总计</th>
+                        <th class="text-center" style="width:80px;">活跃</th>
+                        <th class="text-center" style="width:80px;">已掌握</th>
+                        <th class="text-center" style="width:80px;">已归档</th>
+                        <th style="width:140px;">掌握率</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in rows %}
+                    {% set ms_rate = (r['mastered_cnt'] / r['total'] * 100)|round(1) if r['total'] > 0 else 0 %}
+                    <tr>
+                        <td><span class="knowledge-badge fs-6">{{ r['zhishidian'] }}</span></td>
+                        <td class="text-center fw-bold">{{ r['total'] }}</td>
+                        <td class="text-center">{{ r['active_cnt'] }}</td>
+                        <td class="text-center text-success fw-bold">{{ r['mastered_cnt'] }}</td>
+                        <td class="text-center text-muted">{{ r['archived_cnt'] }}</td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="progress flex-grow-1" style="height:14px; border-radius:7px;">
+                                    <div class="progress-bar {% if ms_rate < 30 %}bg-danger{% elif ms_rate < 70 %}bg-warning{% else %}bg-success{% endif %}"
+                                         style="width:{{ ms_rate }}%; border-radius:7px;"></div>
+                                </div>
+                                <small class="fw-bold {% if ms_rate < 30 %}text-danger{% elif ms_rate < 70 %}text-warning{% else %}text-success{% endif %}">
+                                    {{ ms_rate }}%
+                                </small>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card-footer text-muted small">
+        共 {{ rows|length }} 个知识点，{{ total_all }} 道错题 &nbsp;|&nbsp;
+        🔴 &lt;30% &nbsp; 🟡 30-70% &nbsp; 🟢 &gt;70%
+    </div>
+</div>
+{% else %}
+<div class="text-center py-5">
+    <i class="bi bi-grid-3x3-gap" style="font-size: 4rem; color: #ccc;"></i>
+    <h4 class="text-muted mt-3">还没有知识点数据</h4>
+    <p class="text-muted">添加带有知识点的错题后，这里会展示掌握矩阵</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,229 @@
+/* ========== OCR 图片导入页样式 ========== */
+
+/* 拖拽上传区域 */
+.ocr-drop-zone {
+    border: 2px dashed #0dcaf0;
+    border-radius: 16px;
+    padding: 2.5rem 2rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background-color: #f0faff;
+}
+
+.ocr-drop-zone:hover,
+.ocr-drop-zone.drag-over {
+    border-color: #0b9ec4;
+    background-color: #e0f5ff;
+    transform: scale(1.01);
+}
+
+.ocr-drop-zone.drag-over {
+    border-style: solid;
+    box-shadow: 0 0 20px rgba(13, 202, 240, 0.3);
+}
+
+/* 图片预览网格 */
+.ocr-preview-grid {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 1rem;
+}
+
+.ocr-preview-item {
+    width: 120px;
+    height: 120px;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    border: 2px solid #dee2e6;
+    transition: transform 0.2s;
+}
+
+.ocr-preview-item:hover {
+    transform: scale(1.05);
+    border-color: #0dcaf0;
+}
+
+.ocr-preview-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.ocr-preview-item .remove-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(220, 53, 69, 0.9);
+    color: white;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+}
+
+/* 进度步骤指示器 */
+.ocr-progress-steps {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+}
+
+.progress-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.progress-step .step-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    background: #e9ecef;
+    color: #adb5bd;
+    transition: all 0.4s ease;
+}
+
+.progress-step.active .step-icon {
+    background: #0dcaf0;
+    color: white;
+    animation: pulse 1.5s infinite;
+}
+
+.progress-step.done .step-icon {
+    background: #198754;
+    color: white;
+}
+
+.progress-step .step-label {
+    font-size: 0.75rem;
+    color: #adb5bd;
+    font-weight: 500;
+}
+
+.progress-step.active .step-label,
+.progress-step.done .step-label {
+    color: #495057;
+}
+
+.progress-line {
+    width: 60px;
+    height: 3px;
+    background: #e9ecef;
+    margin: 0 8px;
+    margin-bottom: 18px;
+    border-radius: 2px;
+    transition: background 0.4s ease;
+}
+
+.progress-line.done {
+    background: #198754;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+}
+
+/* 置信度指示器 */
+.confidence-indicator {
+    min-width: 42px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.confidence-high {
+    background-color: #d4edda !important;
+    color: #155724 !important;
+    border-color: #c3e6cb !important;
+}
+
+.confidence-medium {
+    background-color: #fff3cd !important;
+    color: #856404 !important;
+    border-color: #ffeaa7 !important;
+}
+
+.confidence-low {
+    background-color: #f8d7da !important;
+    color: #721c24 !important;
+    border-color: #f5c6cb !important;
+}
+
+/* 多题卡片 */
+.question-card {
+    border: 1px solid #dee2e6;
+    border-radius: 12px;
+    overflow: hidden;
+    transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.question-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    border-color: #0dcaf0;
+}
+
+.question-card .card-header {
+    background: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.question-card .card-header .q-select {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.question-card .form-label {
+    color: #6c757d;
+    font-weight: 600;
+}
+
+.question-card textarea.q-field {
+    resize: vertical;
+    font-size: 0.9rem;
+}
+
+.question-card .q-xueke,
+.question-card .q-difficulty {
+    font-size: 0.9rem;
+}
+
+/* 选中的卡片轻微高亮 */
+.question-card:has(.q-select:checked) {
+    border-left: 4px solid #0dcaf0;
+}
+
+/* OCR 字段高亮 */
+.ocr-field:focus {
+    box-shadow: 0 0 0 0.2rem rgba(13, 202, 240, 0.25);
+    border-color: #0dcaf0;
+}
+
+.ocr-field.modified {
+    border-color: #ffc107 !important;
+    box-shadow: 0 0 0 0.2rem rgba(255, 193, 7, 0.25) !important;
+}
+
+/* 低置信度警告动画 */
+#low-confidence-warning {
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}

@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}编辑错题 - Tim 学习助手{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('index') }}">首页</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('question_list') }}">错题本</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('question_detail', question_id=question['id']) }}">错题详情</a></li>
+        <li class="breadcrumb-item active">编辑</li>
+    </ol>
+</nav>
+
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-pencil-square"></i> 编辑错题 #{{ question['id'] }}</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                    <!-- 学科 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">学科 <span class="text-danger">*</span></label>
+                        <select name="xueke" class="form-select" required>
+                            <option value="">请选择学科</option>
+                            {% for s in subjects %}
+                            <option value="{{ s }}" {% if question['xueke'] == s %}selected{% endif %}>{{ s }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- 题目内容 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">题目内容 <span class="text-danger">*</span></label>
+                        <textarea name="timu" class="form-control" rows="4" required>{{ question['timu'] }}</textarea>
+                    </div>
+
+                    <!-- 答案对比 -->
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">学生答案</label>
+                            <textarea name="xueshengdaan" class="form-control" rows="3">{{ question['xueshengdaan'] }}</textarea>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">标准答案</label>
+                            <textarea name="zhengquedaan" class="form-control" rows="3">{{ question['zhengquedaan'] }}</textarea>
+                        </div>
+                    </div>
+
+                    <!-- 错误分析 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">错误分析</label>
+                        <textarea name="cuowufenxi" class="form-control" rows="3">{{ question['cuowufenxi'] }}</textarea>
+                    </div>
+
+                    <!-- 知识点和难度 -->
+                    <div class="row">
+                        <div class="col-md-8 mb-3">
+                            <label class="form-label fw-bold">知识点标签</label>
+                            <input type="text" name="zhishidian" class="form-control"
+                                   value="{{ question['zhishidian'] }}"
+                                   list="kp-list" autocomplete="off">
+                            <datalist id="kp-list">
+                                {% for kp in knowledge_points %}
+                                <option value="{{ kp['zhishidian'] }}">
+                                {% endfor %}
+                            </datalist>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label fw-bold">难度等级</label>
+                            <select name="difficulty" class="form-select">
+                                {% for i in range(1, 6) %}
+                                <option value="{{ i }}" {% if question['difficulty'] == i %}selected{% endif %}>
+                                    {{ '⭐' * i }} {% if i == 1 %}非常简单{% elif i == 2 %}简单{% elif i == 3 %}中等{% elif i == 4 %}困难{% else %}非常困难{% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- 已有图片 -->
+                    {% if images %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">已有图片</label>
+                        <div class="image-preview-container">
+                            {% for img in images %}
+                            <div class="image-preview-item" id="image-{{ img['id'] }}">
+                                <img src="{{ url_for('get_image', question_id=question['id'], image_id=img['id']) }}" alt="{{ img['original_name'] }}">
+                                <span class="delete-btn" onclick="deleteQuestionImage({{ question['id'] }}, {{ img['id'] }})" title="删除">&times;</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- 新增图片 -->
+                    <div class="mb-3 image-upload-area">
+                        <label class="form-label fw-bold">添加更多图片</label>
+                        <input type="file" name="images" class="form-control image-upload-input"
+                               accept="image/*" multiple>
+                        <div class="image-preview-container"></div>
+                    </div>
+
+                    <!-- 下次复习时间 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">下次复习时间</label>
+                        <input type="datetime-local" name="next_review_at" class="form-control"
+                               value="{{ question['next_review_at'] or '' }}"
+                               style="max-width: 280px;">
+                        <small class="text-muted">留空则由系统自动安排；手动设置后将覆盖自动排期</small>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> 保存修改
+                        </button>
+                        <a href="{{ url_for('question_detail', question_id=question['id']) }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-lg"></i> 取消
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

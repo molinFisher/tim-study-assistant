@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}错题本 - Tim 学习助手{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="fw-bold mb-0"><i class="bi bi-journal-x text-primary"></i> 错题本</h2>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('add_question') }}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> 添加错题
+        </a>
+        <a href="{{ url_for('ocr_import') }}" class="btn btn-outline-info">
+            <i class="bi bi-camera"></i> 图片导入
+        </a>
+        <a href="{{ url_for('doc_import') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-file-earmark-text"></i> 文档导入
+        </a>
+        <a href="{{ url_for('paste_import') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-clipboard"></i> 粘贴导入
+        </a>
+        <a href="{{ url_for('question_deleted') }}" class="btn btn-outline-danger">
+            <i class="bi bi-trash"></i> 回收站
+        </a>
+    </div>
+</div>
+
+<!-- 过滤器 -->
+<div class="filter-bar">
+    <form method="GET" class="row g-2 align-items-end">
+        <div class="col-md-2">
+            <label class="form-label small fw-bold">学科</label>
+            <select name="xueke" class="form-select form-select-sm">
+                <option value="">全部学科</option>
+                {% for s in subjects %}
+                <option value="{{ s }}" {% if xueke_filter == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small fw-bold">知识点</label>
+            <select name="zhishidian" class="form-select form-select-sm">
+                <option value="">全部知识点</option>
+                {% for kp in knowledge_points %}
+                <option value="{{ kp['zhishidian'] }}" {% if zhishidian_filter == kp['zhishidian'] %}selected{% endif %}>
+                    {{ kp['zhishidian'] }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small fw-bold">状态</label>
+            <select name="status" class="form-select form-select-sm">
+                <option value="">全部状态</option>
+                {% for key, label in status_options.items() %}
+                <option value="{{ key }}" {% if status_filter == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small fw-bold">关键词搜索</label>
+            <input type="text" name="keyword" class="form-control form-control-sm"
+                   placeholder="搜索题目、知识点..." value="{{ keyword }}" id="keyword-search">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small fw-bold">起始日期</label>
+            <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small fw-bold">截止日期</label>
+            <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+        </div>
+        <div class="col-md-1">
+            <button type="submit" class="btn btn-primary btn-sm w-100">
+                <i class="bi bi-search"></i> 搜索
+            </button>
+        </div>
+        <div class="col-md-1">
+            <a href="{{ url_for('question_list') }}" class="btn btn-outline-secondary btn-sm w-100" title="重置">
+                <i class="bi bi-arrow-counterclockwise"></i>
+            </a>
+        </div>
+    </form>
+</div>
+
+<!-- 导出按钮 + 批量操作 -->
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <small class="text-muted">共 <strong id="total-count">{{ total }}</strong> 道错题</small>
+    <div class="d-flex gap-2">
+        <!-- 批量工具条（默认隐藏） -->
+        <div id="batch-toolbar" class="d-flex align-items-center gap-2" style="display:none;">
+            <span class="badge bg-info" id="sel-count-badge">已选 <span id="sel-count">0</span> 项</span>
+            <select id="batch-action" class="form-select form-select-sm" style="width:auto;">
+                <option value="">批量操作...</option>
+                <option value="status:active">标记为活跃</option>
+                <option value="status:mastered">标记为已掌握</option>
+                <option value="status:archived">标记为已归档</option>
+                <option value="next_review_at">设为今日复习</option>
+            </select>
+            <button class="btn btn-outline-danger btn-sm" id="batch-delete-btn" onclick="batchDelete()" disabled>
+                <i class="bi bi-trash"></i> 批量删除
+            </button>
+        </div>
+        <a href="{{ url_for('export_excel') }}" class="btn btn-outline-success btn-sm">
+            <i class="bi bi-file-earmark-excel"></i> 导出 Excel
+        </a>
+        <a href="{{ url_for('export_pdf') }}" class="btn btn-outline-danger btn-sm">
+            <i class="bi bi-file-earmark-pdf"></i> 导出 PDF
+        </a>
+        <a href="{{ url_for('export_anki') }}" class="btn btn-outline-info btn-sm">
+            <i class="bi bi-box-arrow-up"></i> Anki
+        </a>
+    </div>
+</div>
+
+<!-- 错题列表 -->
+{% if questions %}
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th style="width: 40px;">
+                    <input type="checkbox" id="select-all" title="全选本页" style="display:none;">
+                </th>
+                <th style="width: 60px;">#</th>
+                <th style="width: 80px;">学科</th>
+                <th>题目</th>
+                <th style="width: 100px;">知识点</th>
+                <th style="width: 70px;">难度</th>
+                <th style="width: 65px;">状态</th>
+                <th style="width: 85px;">下次复习</th>
+                <th style="width: 100px;">时间</th>
+                <th style="width: 140px;">操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for q in questions %}
+            <tr>
+                <td><input type="checkbox" class="row-select" value="{{ q['id'] }}" aria-label="选择此题"></td>
+                <td>{{ q['id'] }}</td>
+                <td><span class="badge bg-primary">{{ q['xueke'] }}</span></td>
+                <td>
+                    <a href="{{ url_for('question_detail', question_id=q['id']) }}" class="text-decoration-none text-dark">
+                        <span class="text-truncate d-inline-block" style="max-width: 350px;">
+                            {{ q.get('timu_plain', q['timu'][:60]) }}
+                        </span>
+                    </a>
+                </td>
+                <td>
+                    {% if q['zhishidian'] %}
+                    <span class="knowledge-badge">{{ q['zhishidian'][:10] }}</span>
+                    {% else %}
+                    <span class="text-muted">-</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="difficulty-stars">{{ '⭐' * q['difficulty'] }}</span>
+                </td>
+                <td>
+                    {% if q['status'] == 'active' %}
+                    <span class="badge bg-warning text-dark">活跃</span>
+                    {% elif q['status'] == 'mastered' %}
+                    <span class="badge bg-success">已掌握</span>
+                    {% else %}
+                    <span class="badge bg-secondary">已归档</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if q['next_review_at'] %}
+                    <small {% if q['next_review_at'][:10] <= today_str %}class="text-danger fw-bold"{% else %}class="text-muted"{% endif %}>
+                        {{ q['next_review_at'][:10] }}
+                    </small>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td><small class="text-muted">{{ q['bstudio_create_time'][:10] }}</small></td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <a href="{{ url_for('question_detail', question_id=q['id']) }}" class="btn btn-outline-primary" title="查看">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        <a href="{{ url_for('edit_question', question_id=q['id']) }}" class="btn btn-outline-secondary" title="编辑">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                        <form method="POST" action="{{ url_for('delete_question', question_id=q['id']) }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                            <button type="submit" class="btn btn-outline-danger" title="删除"
+                                    data-confirm="确定要删除这道错题吗？">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- 分页 -->
+{% if total_pages > 1 %}
+<nav>
+    <ul class="pagination justify-content-center">
+        <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('question_list', page=page-1, xueke=xueke_filter, zhishidian=zhishidian_filter, status=status_filter, keyword=keyword) }}">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+        </li>
+        {% for p in range(1, total_pages + 1) %}
+            {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+            <li class="page-item {% if p == page %}active{% endif %}">
+                <a class="page-link" href="{{ url_for('question_list', page=p, xueke=xueke_filter, zhishidian=zhishidian_filter, status=status_filter, keyword=keyword) }}">{{ p }}</a>
+            </li>
+            {% elif p == page - 3 or p == page + 3 %}
+            <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('question_list', page=page+1, xueke=xueke_filter, zhishidian=zhishidian_filter, status=status_filter, keyword=keyword) }}">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="text-center py-5">
+    <i class="bi bi-inbox" style="font-size: 4rem; color: #ccc;"></i>
+    <h4 class="text-muted mt-3">还没有错题记录</h4>
+    <p class="text-muted">点击下方按钮添加你的第一道错题</p>
+    <a href="{{ url_for('add_question') }}" class="btn btn-primary btn-lg">
+        <i class="bi bi-plus-lg"></i> 添加错题
+    </a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/question_list.js') }}"></script>
+{% endblock %}

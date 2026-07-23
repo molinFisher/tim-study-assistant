@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}错题统计分析报告 - Tim 学习助手{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h2 class="fw-bold mb-0"><i class="bi bi-clipboard-data text-primary"></i> 错题统计分析报告</h2>
+        <p class="text-muted mb-0">学科分布 · 错误类型 · 掌握程度，一目了然</p>
+    </div>
+    <a href="{{ url_for('question_list') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> 返回错题本
+    </a>
+</div>
+
+{% if total == 0 %}
+<div class="text-center py-5">
+    <i class="bi bi-inbox" style="font-size: 4rem; color: #ccc;"></i>
+    <h4 class="text-muted mt-3">还没有错题记录</h4>
+    <p class="text-muted">先去添加或导入错题，再回来查看分析报告</p>
+    <a href="{{ url_for('add_question') }}" class="btn btn-primary">
+        <i class="bi bi-plus-lg"></i> 添加第一道错题
+    </a>
+</div>
+{% else %}
+
+<!-- ===== 概览卡片 ===== -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100 border-0 shadow-sm" style="background: linear-gradient(135deg,#e3f2fd,#bbdefb);">
+            <div class="card-body">
+                <i class="bi bi-journal-x" style="font-size: 2rem; color:#1976d2;"></i>
+                <h1 class="display-5 fw-bold my-2" style="color:#1976d2;">{{ total }}</h1>
+                <p class="text-muted mb-0 small">错题总数</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100 border-0 shadow-sm" style="background: linear-gradient(135deg,#e8f5e9,#c8e6c9);">
+            <div class="card-body">
+                <i class="bi bi-check-circle" style="font-size: 2rem; color:#388e3c;"></i>
+                <h1 class="display-5 fw-bold my-2" style="color:#388e3c;">{{ mastered_cnt }}</h1>
+                <p class="text-muted mb-0 small">已掌握 ({{ mastery_rate }}%)</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100 border-0 shadow-sm" style="background: linear-gradient(135deg,#fff3e0,#ffe0b2);">
+            <div class="card-body">
+                <i class="bi bi-lightbulb" style="font-size: 2rem; color:#f57c00;"></i>
+                {% if top_subject %}
+                <h1 class="display-6 fw-bold my-2" style="color:#f57c00;">{{ top_subject[0] }}</h1>
+                <p class="text-muted mb-0 small">最多学科 ({{ top_subject[1] }}题)</p>
+                {% else %}
+                <h1 class="display-6 fw-bold my-2" style="color:#f57c00;">—</h1>
+                <p class="text-muted mb-0 small">最多学科</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100 border-0 shadow-sm" style="background: linear-gradient(135deg,#fce4ec,#f8bbd0);">
+            <div class="card-body">
+                <i class="bi bi-exclamation-triangle" style="font-size: 2rem; color:#c2185b;"></i>
+                {% if top_error and top_error[1] > 0 %}
+                <h1 class="display-6 fw-bold my-2" style="color:#c2185b;">{{ top_error[0] }}</h1>
+                <p class="text-muted mb-0 small">主要错误类型 ({{ top_error[1] }}题)</p>
+                {% else %}
+                <h1 class="display-6 fw-bold my-2" style="color:#c2185b;">—</h1>
+                <p class="text-muted mb-0 small">主要错误类型</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== 1. 学科错题数量分布 ===== -->
+<div class="card mb-4 border-0 shadow-sm">
+    <div class="card-header bg-white fw-bold">
+        <i class="bi bi-collection text-primary"></i> 一、学科错题数量分布
+    </div>
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-lg-5 text-center mb-3 mb-lg-0">
+                {% if subject_pie %}
+                <img src="data:image/png;base64,{{ subject_pie }}" alt="学科分布" class="img-fluid">
+                {% else %}
+                <p class="text-muted">暂无数据</p>
+                {% endif %}
+            </div>
+            <div class="col-lg-7">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr><th>学科</th><th class="text-center">数量</th><th>占比</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for s in subject_labels %}
+                        <tr>
+                            <td><span class="badge bg-primary">{{ s }}</span></td>
+                            <td class="text-center fw-bold">{{ subject_counts[loop.index0] }}</td>
+                            <td style="width:40%;">
+                                <div class="progress" style="height:8px;">
+                                    <div class="progress-bar bg-primary" style="width: {{ (subject_counts[loop.index0] / total * 100)|round(1) }}%"></div>
+                                </div>
+                                <small class="text-muted">{{ (subject_counts[loop.index0] / total * 100)|round(1) }}%</small>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== 2. 错误类型分布 ===== -->
+<div class="card mb-4 border-0 shadow-sm">
+    <div class="card-header bg-white fw-bold">
+        <i class="bi bi-exclamation-triangle text-danger"></i> 二、错误类型分布
+        <span class="badge bg-light text-muted fw-normal ms-1">由系统根据「错误分析」自动归类，仅供参考</span>
+    </div>
+    <div class="card-body">
+        {% if error_bar %}
+        <div class="text-center mb-3">
+            <img src="data:image/png;base64,{{ error_bar }}" alt="错误类型分布" class="img-fluid" style="max-height:360px;">
+        </div>
+        {% else %}
+        <p class="text-muted mb-3">暂无错误分析文本，无法归类。</p>
+        {% endif %}
+        <table class="table table-sm align-middle mb-0">
+            <thead>
+                <tr><th>错误类型</th><th class="text-center">数量</th><th>占比</th></tr>
+            </thead>
+            <tbody>
+                {% for e in error_labels %}
+                <tr>
+                    <td>
+                        <i class="bi bi-dot" style="font-size:1.5rem; color:{{ ['#1976d2','#388e3c','#f57c00','#c2185b','#7b1fa2','#9e9e9e'][loop.index0 % 6] }};"></i>
+                        {{ e }}
+                    </td>
+                    <td class="text-center fw-bold">{{ error_values[loop.index0] }}</td>
+                    <td style="width:40%;">
+                        <div class="progress" style="height:8px;">
+                            <div class="progress-bar" style="width: {{ (error_values[loop.index0] / total * 100)|round(1) }}%; background-color:{{ ['#1976d2','#388e3c','#f57c00','#c2185b','#7b1fa2','#9e9e9e'][loop.index0 % 6] }};"></div>
+                        </div>
+                        <small class="text-muted">{{ (error_values[loop.index0] / total * 100)|round(1) }}%</small>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ===== 3. 掌握程度分布 ===== -->
+<div class="card mb-4 border-0 shadow-sm">
+    <div class="card-header bg-white fw-bold">
+        <i class="bi bi-graph-up text-success"></i> 三、掌握程度分布
+    </div>
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-lg-5 text-center mb-3 mb-lg-0">
+                {% if mastery_pie %}
+                <img src="data:image/png;base64,{{ mastery_pie }}" alt="掌握程度分布" class="img-fluid">
+                {% endif %}
+            </div>
+            <div class="col-lg-7">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr><th>状态</th><th class="text-center">数量</th><th>占比</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for m in mastery_labels %}
+                        <tr>
+                            <td>
+                                {% if m == '已掌握' %}<span class="badge bg-success">{{ m }}</span>
+                                {% elif m == '活跃' %}<span class="badge bg-warning text-dark">{{ m }}</span>
+                                {% else %}<span class="badge bg-secondary">{{ m }}</span>{% endif %}
+                            </td>
+                            <td class="text-center fw-bold">{{ mastery_values[loop.index0] }}</td>
+                            <td style="width:40%;">
+                                <div class="progress" style="height:8px;">
+                                    {% if m == '已掌握' %}<div class="progress-bar bg-success" style="width: {{ (mastery_values[loop.index0] / total * 100)|round(1) }}%"></div>
+                                    {% elif m == '活跃' %}<div class="progress-bar bg-warning" style="width: {{ (mastery_values[loop.index0] / total * 100)|round(1) }}%"></div>
+                                    {% else %}<div class="progress-bar bg-secondary" style="width: {{ (mastery_values[loop.index0] / total * 100)|round(1) }}%"></div>{% endif %}
+                                </div>
+                                <small class="text-muted">{{ (mastery_values[loop.index0] / total * 100)|round(1) }}%</small>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div class="mt-3 p-2 rounded bg-light">
+                    <i class="bi bi-trophy-fill text-warning"></i>
+                    总体掌握率：<strong class="text-success">{{ mastery_rate }}%</strong>
+                    （已掌握 {{ mastered_cnt }} / 共 {{ total }} 题）
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}

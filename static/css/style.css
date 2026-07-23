@@ -1,0 +1,484 @@
+/* ========== Tim 学习助手 - 自定义样式 ========== */
+
+/* 基础变量 */
+:root {
+    --primary: #0d6efd;
+    --success: #198754;
+    --warning: #ffc107;
+    --danger: #dc3545;
+    --info: #0dcaf0;
+    --dark: #212529;
+    --light: #f8f9fa;
+}
+
+/* 通用 */
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: #f5f7fa;
+}
+
+main {
+    flex: 1;
+}
+
+/* 导航栏 */
+.navbar-brand {
+    font-size: 1.3rem;
+    letter-spacing: 0.5px;
+}
+
+.navbar .nav-link {
+    padding: 0.5rem 0.9rem;
+    border-radius: 6px;
+    transition: background-color 0.2s;
+}
+
+.navbar .nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.navbar .nav-link.active {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* 统计卡片 */
+.stat-card {
+    border-radius: 12px;
+    border: none;
+    transition: transform 0.2s, box-shadow 0.2s;
+    overflow: hidden;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+}
+
+.stat-card .card-body {
+    padding: 1.5rem;
+}
+
+.stat-card .stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin-bottom: 0.8rem;
+}
+
+.stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.stat-card .stat-label {
+    color: #6c757d;
+    font-size: 0.85rem;
+}
+
+.stat-card.primary .stat-icon { background: #e3f2fd; color: var(--primary); }
+.stat-card.success .stat-icon { background: #e8f5e9; color: var(--success); }
+.stat-card.warning .stat-icon { background: #fff3e0; color: #f57c00; }
+.stat-card.danger .stat-icon { background: #fce4ec; color: var(--danger); }
+
+/* 错题卡片 */
+.question-card {
+    border-radius: 10px;
+    border: 1px solid #e9ecef;
+    transition: box-shadow 0.2s;
+    margin-bottom: 1rem;
+}
+
+.question-card:hover {
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+}
+
+.question-card .card-header {
+    background: transparent;
+    border-bottom: 1px solid #e9ecef;
+    font-weight: 600;
+}
+
+/* 答案对比 */
+.answer-compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+.answer-box {
+    padding: 1.2rem;
+    border-radius: 10px;
+    min-height: 120px;
+}
+
+.answer-box.student {
+    background-color: #fff3e0;
+    border: 1px solid #ffe0b2;
+}
+
+.answer-box.correct {
+    background-color: #e8f5e9;
+    border: 1px solid #c8e6c9;
+}
+
+/* 复习卡片 */
+.review-card {
+    border-radius: 16px;
+    border: none;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+}
+
+.review-image-item img.zoomed {
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    max-width: 90vw !important;
+    max-height: 90vh !important;
+    z-index: 9999;
+    box-shadow: 0 0 40px rgba(0,0,0,0.5);
+    border-radius: 4px;
+    cursor: zoom-out;
+}
+
+.review-card .card-body {
+    padding: 2rem;
+}
+
+.review-card .question-content {
+    font-size: 1.15rem;
+    line-height: 1.8;
+    padding: 1.5rem;
+    background: #f8f9fa;
+    border-radius: 10px;
+    margin-bottom: 1.5rem;
+}
+
+.review-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 1.5rem;
+}
+
+.review-actions .btn {
+    min-width: 120px;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    border-radius: 10px;
+}
+
+/* 复习日历热力图 */
+.calendar-heatmap {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 3px;
+}
+
+.calendar-day {
+    aspect-ratio: 1;
+    border-radius: 4px;
+    background-color: #ebedf0;
+    transition: transform 0.1s;
+}
+
+.calendar-day:hover {
+    transform: scale(1.2);
+}
+
+.calendar-day.level-1 { background-color: #9be9a8; }
+.calendar-day.level-2 { background-color: #40c463; }
+.calendar-day.level-3 { background-color: #30a14e; }
+.calendar-day.level-4 { background-color: #216e39; }
+
+/* 图片上传预览 */
+.image-preview-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.image-preview-item {
+    width: 120px;
+    height: 120px;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    border: 2px solid #e9ecef;
+}
+
+.image-preview-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.image-preview-item .delete-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(220, 53, 69, 0.9);
+    color: white;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+/* 知识点标签 */
+.knowledge-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    background-color: #e3f2fd;
+    color: #1565c0;
+    margin: 0.15rem;
+}
+
+/* 难度星级 */
+.difficulty-stars {
+    color: #ffc107;
+    font-size: 1rem;
+    letter-spacing: 2px;
+}
+
+/* 进度环 */
+.progress-ring {
+    width: 120px;
+    height: 120px;
+    position: relative;
+    margin: 0 auto;
+}
+
+/* 过滤器栏 */
+.filter-bar {
+    background: white;
+    padding: 1.2rem;
+    border-radius: 10px;
+    margin-bottom: 1.5rem;
+    border: 1px solid #e9ecef;
+}
+
+/* 分页 */
+.pagination {
+    --bs-pagination-active-bg: var(--primary);
+    --bs-pagination-active-border-color: var(--primary);
+}
+
+/* 图表容器 */
+.chart-container {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid #e9ecef;
+}
+
+.chart-container img {
+    max-width: 100%;
+    height: auto;
+}
+
+/* 暗色模式 */
+[data-bs-theme="dark"] body { background: #1a1a2e; color: #e0e0e0; }
+[data-bs-theme="dark"] .card { background: #16213e; border-color: #0f3460; color: #e0e0e0; }
+[data-bs-theme="dark"] .card-header { background: #0f3460; color: #e0e0e0; }
+[data-bs-theme="dark"] .bg-light { background: #16213e !important; color: #ccc !important; }
+[data-bs-theme="dark"] .text-muted { color: #aaa !important; }
+[data-bs-theme="dark"] a:not(.btn) { color: #90caf9; }
+[data-bs-theme="dark"] a:hover:not(.btn) { color: #bbdefb; }
+[data-bs-theme="dark"] .filter-bar { background: #16213e; border-color: #0f3460; }
+[data-bs-theme="dark"] .table { color: #e0e0e0; }
+[data-bs-theme="dark"] .table-hover tbody tr:hover { background: #1a1a3e; }
+[data-bs-theme="dark"] .navbar.bg-primary { background: #0f3460 !important; }
+[data-bs-theme="dark"] footer { background: #111 !important; color: #888; }
+[data-bs-theme="dark"] .question-content { background: #1a1a2e; color: #ddd; }
+[data-bs-theme="dark"] .review-card { box-shadow: 0 8px 30px rgba(0,0,0,0.4); }
+[data-bs-theme="dark"] .list-group-item { background: #16213e; border-color: #0f3460; color: #e0e0e0; }
+[data-bs-theme="dark"] .calendar-day { background: #16213e; border-color: #0f3460; }
+[data-bs-theme="dark"] .calendar-day.today { background: #1a3a6e; }
+[data-bs-theme="dark"] .modal-content { background: #16213e; color: #e0e0e0; }
+[data-bs-theme="dark"] .text-dark { color: #e0e0e0 !important; }
+[data-bs-theme="dark"] .btn-outline-primary { color: #90caf9; border-color: #90caf9; }
+
+/* 响应式 */
+@media (max-width: 768px) {
+    .answer-compare {
+        grid-template-columns: 1fr;
+    }
+
+    .stat-card .stat-value {
+        font-size: 1.5rem;
+    }
+
+    .review-card .card-body {
+        padding: 1.2rem;
+    }
+
+    .review-actions {
+        flex-direction: column;
+    }
+
+    /* 表格横滚 */
+    .table-responsive table {
+        font-size: 0.75rem;
+    }
+    .table-responsive th, .table-responsive td {
+        padding: 0.4rem 0.3rem;
+        white-space: nowrap;
+    }
+
+    /* 筛选栏全宽 */
+    .filter-bar .col-md-2, .filter-bar .col-md-3, .filter-bar .col-md-4 {
+        flex: 0 0 100%;
+        max-width: 100%;
+        margin-bottom: 0.4rem;
+    }
+
+    /* 复习卡片按钮纵向 */
+    .review-actions .btn {
+        min-width: 100%;
+        margin-bottom: 0.3rem;
+    }
+
+    /* 复习卡片全宽 */
+    .review-card-item {
+        margin-left: -12px;
+        margin-right: -12px;
+    }
+
+    /* 日历移动端 */
+    .calendar-day {
+        min-height: 50px;
+        padding: 2px 3px;
+    }
+    .calendar-day .day-num {
+        font-size: 0.7rem;
+    }
+    .day-plan-item {
+        font-size: 0.55rem;
+    }
+    .calendar-day.empty {
+        display: none;
+    }
+    .calendar-header {
+        font-size: 0.65rem;
+        padding: 3px 0;
+    }
+
+    /* 概览卡片 */
+    .card .display-5 {
+        font-size: 1.8rem;
+    }
+
+    /* 导航 */
+    .navbar-brand {
+        font-size: 0.95rem;
+    }
+
+    /* 报告页表格 */
+    .card-body .table {
+        font-size: 0.75rem;
+    }
+}
+
+/* 按钮增强 */
+.btn {
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+}
+
+/* 表格增强 */
+.table {
+    font-size: 0.95rem;
+}
+
+.table th {
+    font-weight: 600;
+    background-color: #f8f9fa;
+}
+
+/* 面包屑 */
+.breadcrumb {
+    background: transparent;
+    padding: 0;
+}
+
+/* 卡片增强 */
+.card {
+    border-radius: 10px;
+}
+
+/* 模态框 */
+.modal-content {
+    border-radius: 14px;
+}
+
+/* 学习计划日历 */
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+.calendar-header {
+    text-align: center;
+    font-size: 0.8rem;
+    font-weight: bold;
+    padding: 6px 0;
+    background: #f1f3f5;
+    border-radius: 4px;
+}
+.calendar-day {
+    min-height: 80px;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 4px 6px;
+    background: #fff;
+    transition: background 0.2s;
+}
+.calendar-day.empty {
+    background: #fafafa;
+    border-color: transparent;
+}
+.calendar-day.today {
+    background: #e3f2fd;
+    border-color: #2196f3;
+}
+.calendar-day .day-num {
+    font-size: 0.85rem;
+    font-weight: bold;
+    color: #555;
+    margin-bottom: 2px;
+}
+.calendar-day .day-plans {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.day-plan-item {
+    font-size: 0.65rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: default;
+}

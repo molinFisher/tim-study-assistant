@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}粘贴导入 - Tim 学习助手{% endblock %}
+{% block content %}
+<div class="row"><div class="col-lg-8 mx-auto">
+<h4 class="fw-bold mb-3"><i class="bi bi-clipboard text-info"></i> 粘贴文本导入</h4>
+<div class="alert alert-light border small">支持格式：每道题以题号(如1. 2. 或(1)(2))开头，"答案："后接正确答案。示例：<br>
+<code>1. 计算 2+3 的值<br>答案：5<br>2. 解方程 x+1=0<br>答案：x=-1</code></div>
+<form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+    <div class="mb-2"><select name="xueke" class="form-select form-select-sm" style="max-width:150px;">
+        {% for s in subjects %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+    </select></div>
+    <textarea name="text" class="form-control" rows="15" placeholder="在此粘贴题目内容..."
+        style="font-family: monospace; font-size: 0.9rem;" required></textarea>
+    <button type="submit" class="btn btn-primary mt-3"><i class="bi bi-check-lg"></i> 导入</button>
+    <a href="{{ url_for('question_list') }}" class="btn btn-outline-secondary mt-3">返回错题本</a>
+</form>
+</div></div>
+{% endblock %}

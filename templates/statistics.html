@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}统计分析 - Tim 学习助手{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <h2 class="fw-bold"><i class="bi bi-bar-chart text-primary"></i> 统计分析</h2>
+    <p class="text-muted">全面了解你的学习情况，发现薄弱环节。</p>
+</div>
+
+<!-- 状态概览 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h1 class="display-4 text-primary fw-bold">{{ total }}</h1>
+                <p class="text-muted mb-0">错题总数</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h1 class="display-4 text-warning fw-bold">{{ active_cnt }}</h1>
+                <p class="text-muted mb-0">活跃错题</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h1 class="display-4 text-success fw-bold">{{ mastered_cnt }}</h1>
+                <p class="text-muted mb-0">已掌握</p>
+                {% if total > 0 %}
+                <div class="progress mt-2" style="height: 6px;">
+                    <div class="progress-bar bg-success" style="width: {{ (mastered_cnt / total * 100)|int }}%"></div>
+                </div>
+                <small class="text-success">掌握率 {{ (mastered_cnt / total * 100)|int }}%</small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <!-- 学科分布饼图 -->
+    {% if xueke_pie %}
+    <div class="col-lg-6">
+        <div class="chart-container">
+            <h5 class="fw-bold mb-3"><i class="bi bi-pie-chart"></i> 学科分布</h5>
+            <img src="data:image/png;base64,{{ xueke_pie }}" alt="学科分布" class="img-fluid">
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 知识点分布柱状图 -->
+    {% if zp_bar %}
+    <div class="col-lg-6">
+        <div class="chart-container">
+            <h5 class="fw-bold mb-3"><i class="bi bi-bar-chart-steps"></i> 知识点分布 Top 10</h5>
+            <img src="data:image/png;base64,{{ zp_bar }}" alt="知识点分布" class="img-fluid">
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 复习趋势折线图 -->
+    {% if trend_chart %}
+    <div class="col-lg-6">
+        <div class="chart-container">
+            <h5 class="fw-bold mb-3"><i class="bi bi-graph-up"></i> 复习趋势（近 8 周）</h5>
+            <img src="data:image/png;base64,{{ trend_chart }}" alt="复习趋势" class="img-fluid">
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 难度分布雷达图 -->
+    {% if radar_chart %}
+    <div class="col-lg-6">
+        <div class="chart-container">
+            <h5 class="fw-bold mb-3"><i class="bi bi-star"></i> 难度分布</h5>
+            <img src="data:image/png;base64,{{ radar_chart }}" alt="难度分布" class="img-fluid">
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 错误类型分布 -->
+{% if error_bar %}
+<div class="row g-3 mt-3">
+    <div class="col-lg-6">
+        <div class="chart-container">
+            <h5 class="fw-bold mb-3"><i class="bi bi-exclamation-triangle"></i> 错误类型分布</h5>
+            <img src="data:image/png;base64,{{ error_bar }}" alt="错误类型分布" class="img-fluid">
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="chart-container">
+            <h5 class="fw-bold mb-3"><i class="bi bi-graph-up"></i> 掌握程度分布</h5>
+            {% if mastery_pie %}
+            <img src="data:image/png;base64,{{ mastery_pie }}" alt="掌握程度分布" class="img-fluid">
+            {% endif %}
+            <div class="mt-2 text-center">
+                <span class="fw-bold">掌握率: <span class="text-success">{{ mastery_rate }}%</span></span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if total == 0 %}
+<div class="text-center py-5">
+    <i class="bi bi-bar-chart" style="font-size: 4rem; color: #ccc;"></i>
+    <h4 class="text-muted mt-3">还没有统计数据</h4>
+    <p class="text-muted">添加错题后，这里会展示详细的学习分析</p>
+    <a href="{{ url_for('add_question') }}" class="btn btn-primary">
+        <i class="bi bi-plus-lg"></i> 添加第一道错题
+    </a>
+</div>
+{% endif %}
+{% endblock %}

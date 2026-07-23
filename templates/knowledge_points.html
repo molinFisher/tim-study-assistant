@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}知识点管理 - Tim 学习助手{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="fw-bold mb-0"><i class="bi bi-tags text-primary"></i> 知识点管理</h2>
+</div>
+
+<!-- 筛选栏 -->
+<div class="filter-bar mb-3">
+    <form method="GET" class="row g-2 align-items-end">
+        <div class="col-md-3">
+            <label class="form-label small fw-bold">学科</label>
+            <select name="xueke" class="form-select form-select-sm">
+                <option value="">全部学科</option>
+                {% for s in subjects %}
+                <option value="{{ s }}" {% if xueke_filter == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small fw-bold">时间范围</label>
+            <select name="days" class="form-select form-select-sm">
+                <option value="">全部时间</option>
+                <option value="7" {% if days_filter|string == '7' %}selected{% endif %}>最近 7 天</option>
+                <option value="30" {% if days_filter|string == '30' %}selected{% endif %}>最近 30 天</option>
+                <option value="90" {% if days_filter|string == '90' %}selected{% endif %}>最近 90 天</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small fw-bold">掌握程度</label>
+            <select name="status" class="form-select form-select-sm">
+                <option value="">全部状态</option>
+                {% for key, label in status_options.items() %}
+                <option value="{{ key }}" {% if status_filter == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary btn-sm w-100">
+                <i class="bi bi-funnel"></i> 筛选
+            </button>
+        </div>
+        <div class="col-md-2">
+            <a href="{{ url_for('knowledge_points') }}" class="btn btn-outline-secondary btn-sm w-100">
+                <i class="bi bi-arrow-counterclockwise"></i> 重置
+            </a>
+        </div>
+    </form>
+</div>
+
+{% if kps %}
+<div class="table-responsive">
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th>知识点</th>
+                <th class="text-center">总题数</th>
+                <th class="text-center">活跃</th>
+                <th class="text-center">已掌握</th>
+                <th>掌握率</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for kp in kps %}
+            <tr>
+                <td>
+                    <span class="knowledge-badge fs-6">{{ kp['zhishidian'] }}</span>
+                </td>
+                <td class="text-center fw-bold">{{ kp['total'] }}</td>
+                <td class="text-center">{{ kp['active_count'] }}</td>
+                <td class="text-center text-success fw-bold">{{ kp['mastered_count'] }}</td>
+                <td>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="progress flex-grow-1" style="height: 8px;">
+                            {% set pct = (kp['mastered_count'] / kp['total'] * 100) if kp['total'] > 0 else 0 %}
+                            <div class="progress-bar bg-success" style="width: {{ pct|int }}%"></div>
+                        </div>
+                        <small class="text-muted">{{ pct|int }}%</small>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="text-center py-5">
+    <i class="bi bi-tags" style="font-size: 4rem; color: #ccc;"></i>
+    <h4 class="text-muted mt-3">还没有知识点</h4>
+    <p class="text-muted">添加错题时输入知识点标签，这里会自动汇总统计</p>
+    <a href="{{ url_for('add_question') }}" class="btn btn-primary">
+        <i class="bi bi-plus-lg"></i> 去添加错题
+    </a>
+</div>
+{% endif %}
+{% endblock %}
