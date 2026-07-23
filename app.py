@@ -1362,25 +1362,26 @@ def api_knowledge_points_tree():
 @app.route('/api/knowledge-points/node', methods=['POST'])
 @login_required
 def api_create_knowledge_node():
-    """在知识点多层结构树中新增节点（供录入选择器右键「添加子节点 / 同级」）。
+    """在知识点多层结构树中新增节点（供录入选择器右键新增）。
 
-    行为：
-      · 右键学科(level1) -> 新增章(level2)
-      · 右键章(level2)   -> 新增知识点(level3)
-      · 右键知识点(level3)-> 新增同级知识点(level3，挂在同父节点下)
-      · 不传 parent_id    -> 新增学科(level1)
+    行为由请求体 mode 控制：
+      · mode='child'  （加下级）：新节点层级 = 父层级 + 1，挂在右键节点下
+      · mode='sibling'（加同级）：新节点层级 = 父层级，挂在父的父下（根节点则为顶层学科）
+      · 不传 mode      ：兼容旧层级推断（学科→章 / 章→知识点 / 知识点→同级）
+      · 不传 parent_id  ：新增学科(level1)
     复用既有节点（ensure_* 全局查找），避免重复建节点。
     """
     data = request.get_json(silent=True) or {}
     name = normalize_name(data.get('name') or '')
     parent_id = data.get('parent_id')
+    mode = data.get('mode')
     if not name:
         return jsonify({'success': False, 'message': '节点名称不能为空'})
 
     parent = None
     if parent_id:
         parent = query_db(
-            "SELECT id, level, xueke, name FROM knowledge_points WHERE id=?",
+            "SELECT id, parent_id, level, xueke, name FROM knowledge_points WHERE id=?",
             (parent_id,), one=True)
         if not parent:
             return jsonify({'success': False, 'message': '父节点不存在'})
@@ -1391,14 +1392,22 @@ def api_create_knowledge_node():
     else:
         plevel = parent['level']
         xueke = parent['xueke'] or parent['name']
-        if plevel >= 3:
-            # 知识点下不能再下钻，改为加同级（同父节点下）
+        if mode == 'child':
+            # 明确加下级：层级 = 父层级 + 1，直接挂在右键节点下
+            level = plevel + 1
+        elif mode == 'sibling':
+            # 明确加同级：层级 = 父层级，挂在父的父下（父为根则成为新顶层学科）
+            level = plevel
             parent_id = parent['parent_id']
-            level = 3
-        elif plevel == 1:
-            level = 2
-        else:  # level == 2
-            level = 3
+        else:
+            # 兼容旧层级推断逻辑（不传 mode 时）
+            if plevel >= 3:
+                parent_id = parent['parent_id']
+                level = 3
+            elif plevel == 1:
+                level = 2
+            else:  # level == 2
+                level = 3
         nid = ensure_node(name, level, xueke, g.user_uuid, parent_id)
 
     node = query_db(

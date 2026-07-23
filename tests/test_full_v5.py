@@ -522,6 +522,63 @@ def main():
         FAIL += 1; print(f"  ❌ 回收站彻底删除异常: {gone}"); ERRORS.append("回收站彻底删除异常")
     if rb in CLEANUP_IDS: CLEANUP_IDS.remove(rb)
 
+    # ---------- 11. 右键加节点 sibling/child 模式 ----------
+    section("11. 右键加节点 sibling/child 模式（加下级 / 加同级）")
+    rt = S.get(f"{BASE}/api/knowledge-points/tree?scope=all",
+               headers={"X-CSRF-Token": csrf_token()}, timeout=20).json()["tree"]
+    math_node = next((n for n in rt if n["name"] == "数学"), None)
+    if math_node:
+        mid_subj = math_node["id"]
+        chap = math_node["children"][0] if math_node["children"] else None
+        pt = chap["children"][0] if (chap and chap["children"]) else None
+        NH = {"X-CSRF-Token": csrf_token(), "Content-Type": "application/json"}
+
+        def _add_mode(name, pid, mode):
+            return S.post(f"{BASE}/api/knowledge-points/node",
+                          json={"name": name, "parent_id": pid, "mode": mode},
+                          headers=NH, timeout=20).json()
+
+        if chap:
+            # 章下加下级(child) -> level3 知识点，挂在章下
+            jb = _add_mode("TEST_加下级B", chap["id"], "child")
+            if jb.get("success") and jb["node"]["level"] == 3 and jb["node"]["parent_id"] == chap["id"]:
+                PASS += 1; print("  ✅ 章→加下级(child) 生成知识点(level3, 挂在章下)")
+            else:
+                FAIL += 1; print(f"  ❌ 章→加下级失败: {jb}"); ERRORS.append("章→加下级失败")
+            # 章下加同级(sibling) -> level2 章，挂在学科下
+            je = _add_mode("TEST_同级E", chap["id"], "sibling")
+            if je.get("success") and je["node"]["level"] == 2 and je["node"]["parent_id"] == mid_subj:
+                PASS += 1; print("  ✅ 章→加同级(sibling) 生成章(level2, 挂在学科下)")
+            else:
+                FAIL += 1; print(f"  ❌ 章→加同级失败: {je}"); ERRORS.append("章→加同级失败")
+        if pt:
+            # 知识点下加下级(child) -> level4 下级知识点，挂在该知识点下
+            jc = _add_mode("TEST_加下级C", pt["id"], "child")
+            if jc.get("success") and jc["node"]["level"] == 4 and jc["node"]["parent_id"] == pt["id"]:
+                PASS += 1; print("  ✅ 知识点→加下级(child) 生成下级知识点(level4)")
+            else:
+                FAIL += 1; print(f"  ❌ 知识点→加下级失败: {jc}"); ERRORS.append("知识点→加下级失败")
+            # 知识点下加同级(sibling) -> level3，挂在同父章下
+            jd = _add_mode("TEST_同级D", pt["id"], "sibling")
+            if jd.get("success") and jd["node"]["level"] == 3 and jd["node"]["parent_id"] == pt["parent_id"]:
+                PASS += 1; print("  ✅ 知识点→加同级(sibling) 生成同级知识点(level3, 同父章)")
+            else:
+                FAIL += 1; print(f"  ❌ 知识点→加同级失败: {jd}"); ERRORS.append("知识点→加同级失败")
+        # 学科下加同级(sibling) -> level1 顶层学科
+        jf = _add_mode("TEST_同级F", mid_subj, "sibling")
+        if jf.get("success") and jf["node"]["level"] == 1 and jf["node"]["parent_id"] is None:
+            PASS += 1; print("  ✅ 学科→加同级(sibling) 生成学科(level1)")
+        else:
+            FAIL += 1; print(f"  ❌ 学科→加同级失败: {jf}"); ERRORS.append("学科→加同级失败")
+        # 清理测试节点并重建树
+        cc = db()
+        cc.execute("DELETE FROM knowledge_points WHERE name IN "
+                   "('TEST_加下级B','TEST_加下级C','TEST_同级D','TEST_同级E','TEST_同级F')")
+        cc.commit(); cc.close()
+        S.get(f"{BASE}/api/knowledge-points/migrate", headers={"X-CSRF-Token": csrf_token()}, timeout=20)
+    else:
+        FAIL += 1; print("  ❌ 未找到数学学科，无法测试加节点模式"); ERRORS.append("加节点模式:无数学")
+
     # ---------- 清理 ----------
     section("清理测试数据")
     cleanup()

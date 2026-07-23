@@ -32,7 +32,8 @@
                placeholder="输入名称…" maxlength="50" autocomplete="off">
         <div class="d-flex gap-1 justify-content-end">
             <button class="btn btn-sm btn-outline-secondary" id="kp-ctx-cancel" type="button">取消</button>
-            <button class="btn btn-sm btn-primary" id="kp-ctx-ok" type="button">确定</button>
+            <button class="btn btn-sm btn-outline-primary" id="kp-ctx-sibling" type="button" title="在同级下方新增节点">加同级</button>
+            <button class="btn btn-sm btn-primary" id="kp-ctx-child" type="button" title="在被右键节点下新增下级节点">加下级</button>
         </div>
     </div>
 
@@ -53,7 +54,8 @@
     var ctxMenu = document.getElementById('kp-ctx-menu');
     var ctxLabel = document.getElementById('kp-ctx-label');
     var ctxInput = document.getElementById('kp-ctx-input');
-    var ctxOk = document.getElementById('kp-ctx-ok');
+    var ctxSibling = document.getElementById('kp-ctx-sibling');
+    var ctxChild = document.getElementById('kp-ctx-child');
     var ctxCancel = document.getElementById('kp-ctx-cancel');
 
     function csrf() {
@@ -63,10 +65,11 @@
     var treeData = [];       // 原始树数据
     var selected = {};       // {kpName: true}  已选中
     var flatMap = {};        // {kpName: {level, linked_count, xueke, chapter}}
+    var idMap = {};          // {nodeId: {name, level, parentId}}  供右键时追溯父节点名称
     var expanded = {};       // {nodeKey: true}  展开状态
     var isLoading = false;
     var pendingSelect = null; // 建节点后待自动选中的名称
-    var ctxTarget = null;     // 右键目标节点 {id, level, parentId, name}
+    var ctxTarget = null;     // 右键目标节点 {id, level, parentId, name, parentName}
 
     // ===== 初始化 =====
     function init() {
@@ -107,7 +110,7 @@
             });
     }
 
-    function buildFlatMap(nodes, chapterName) {
+    function buildFlatMap(nodes, chapterName, parentId) {
         nodes.forEach(function (nd) {
             var key = nd.name;
             flatMap[key] = {
@@ -116,8 +119,9 @@
                 xueke: nd.xueke || '',
                 chapter: nd.level === 2 ? nd.name : (nd.level === 3 ? (chapterName || '') : ''),
             };
+            idMap[nd.id] = { name: nd.name, level: nd.level, parentId: parentId };
             if (nd.children && nd.children.length) {
-                buildFlatMap(nd.children, nd.level === 2 ? nd.name : chapterName);
+                buildFlatMap(nd.children, nd.level === 2 ? nd.name : chapterName, nd.id);
             }
         });
     }
@@ -265,10 +269,8 @@
             parentId: el.dataset.parentId === '' ? null : parseInt(el.dataset.parentId, 10),
             name: el.dataset.name
         };
-        var label;
-        if (ctxTarget.level === 1) label = '在「' + ctxTarget.name + '」下添加章';
-        else if (ctxTarget.level === 2) label = '在「' + ctxTarget.name + '」下添加知识点';
-        else label = '在「' + ctxTarget.name + '」同级添加知识点';
+        ctxTarget.parentName = (idMap[ctxTarget.parentId] || {}).name || null;
+        var label = '新增知识点（右键「' + ctxTarget.name + '」）';
         ctxLabel.textContent = label;
         ctxInput.value = '';
         ctxMenu.classList.remove('d-none');
@@ -283,38 +285,33 @@
         ctxInput.focus();
     }
 
-    function ctxConfirm() {
+    function ctxConfirm(mode) {
         var name = ctxInput.value.trim();
         if (!name) { ctxInput.focus(); return; }
-        var parentId, isLeaf, parentName;
-        if (ctxTarget.level === 3) {
-            parentId = ctxTarget.parentId;      // 同级：挂在同父节点下
-            isLeaf = true;
-            parentName = (flatMap[ctxTarget.name] || {}).chapter || '';
-        } else if (ctxTarget.level === 1) {
-            parentId = ctxTarget.id;           // 学科下加章
-            isLeaf = false;
-            parentName = ctxTarget.name;
-        } else { // level 2
-            parentId = ctxTarget.id;           // 章下加知识点
-            isLeaf = true;
-            parentName = ctxTarget.name;
-        }
-        createNode(parentId, name, isLeaf, parentName);
+        // 先取出异步回调所需的值，避免 hideCtxMenu 清空 ctxTarget 后闭包失效
+        var targetName = ctxTarget.name;
+        var parentName = ctxTarget.parentName;
+        createNode(ctxTarget.id, name, mode, targetName, parentName);
         hideCtxMenu();
     }
 
-    function createNode(parentId, name, isLeaf, parentName) {
+    function createNode(parentId, name, mode, targetName, parentName) {
         fetch('/api/knowledge-points/node', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
-            body: JSON.stringify({ name: name, parent_id: parentId })
+            body: JSON.stringify({ name: name, parent_id: parentId, mode: mode })
         })
             .then(function (r) { return r.json(); })
             .then(function (res) {
                 if (res.success) {
-                    if (parentName) expanded[parentName] = true; // 展开父路径
-                    if (isLeaf) pendingSelect = name;            // 自动选中新叶子
+                    if (mode === 'child') {
+                        expanded[targetName] = true;          // 展开被右键节点，露出新下级
+                    } else if (parentName) {
+                        expanded[parentName] = true;          // 展开共享父节点，露出新同级
+                    }
+                    if (res.node && res.node.level === 3) {
+                        pendingSelect = name;                 // 仅 level3 叶子可勾选
+                    }
                     loadTree();
                 } else {
                     alert(res.message || '添加失败');
@@ -366,10 +363,11 @@
             if (!el) return;
             onContextMenu(e);
         });
-        ctxOk.addEventListener('click', ctxConfirm);
+        ctxSibling.addEventListener('click', function () { ctxConfirm('sibling'); });
+        ctxChild.addEventListener('click', function () { ctxConfirm('child'); });
         ctxCancel.addEventListener('click', hideCtxMenu);
         ctxInput.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') { e.preventDefault(); ctxConfirm(); }
+            if (e.key === 'Enter') { e.preventDefault(); ctxConfirm('sibling'); }
             else if (e.key === 'Escape') { e.preventDefault(); hideCtxMenu(); }
         });
         // 点击菜单外部 / Esc 关闭右键菜单
