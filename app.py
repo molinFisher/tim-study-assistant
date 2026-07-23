@@ -610,11 +610,17 @@ def edit_question(question_id):
 
 
 def _delete_question_records(question_id):
-    """软删除：将错题状态改为 deleted，不物理删除数据"""
-    affected = execute_db(
-        "UPDATE mistake_records SET status='deleted', updated_at=CURRENT_TIMESTAMP WHERE id=?",
-        (question_id,))
-    return bool(affected)
+    """软删除：将错题状态改为 deleted，不物理删除数据。返回是否成功。"""
+    # 先确认错题存在且归属当前用户（防越权）
+    existing = query_db(
+        'SELECT id FROM mistake_records WHERE id = ? AND uuid = ? AND 1=1',
+        (question_id, g.user_uuid), one=True)
+    if not existing:
+        return False
+    execute_db(
+        "UPDATE mistake_records SET status='deleted', updated_at=CURRENT_TIMESTAMP WHERE id=? AND uuid=?",
+        (question_id, g.user_uuid))
+    return True
 
 
 @app.route('/questions/<int:question_id>/delete', methods=['POST'])
