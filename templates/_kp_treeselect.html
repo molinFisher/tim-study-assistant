@@ -1,0 +1,287 @@
+{#
+  知识点树形多选器 — 可复用组件
+  在父模板中 include 即可，自动读取 #zhishidian-hidden 的值作为初始选中项，
+  并通过 fetch /api/knowledge-points/tree 加载树。
+#}
+<div class="kp-treeselect" id="kp-treeselect">
+    <!-- 已选标签区 -->
+    <div class="kp-tags mb-2" id="kp-tags"></div>
+
+    <!-- 搜索 + 展开按钮 -->
+    <div class="input-group input-group-sm">
+        <span class="input-group-text bg-body border-end-0 pe-0"><i class="bi bi-search text-muted"></i></span>
+        <input type="text" id="kp-search-input" class="form-control border-start-0 ps-1"
+               placeholder="搜索或选择知识点..." autocomplete="off">
+        <button class="btn btn-outline-secondary" type="button" id="kp-tree-toggle" title="展开/收起知识点树">
+            <i class="bi bi-diagram-3"></i> 知识树
+        </button>
+    </div>
+
+    <!-- 树形面板 -->
+    <div class="kp-tree-panel border rounded shadow-sm bg-body mt-1 d-none" id="kp-tree-panel">
+        <div class="kp-tree-body" id="kp-tree-body"></div>
+        <div class="kp-tree-empty d-none text-center text-muted py-3" id="kp-tree-empty">
+            <i class="bi bi-inboxes fs-4 d-block mb-1"></i> 暂无知识点数据
+        </div>
+    </div>
+
+    <!-- 隐藏的原始输入（向后兼容，值以分号拼接） -->
+    <input type="hidden" name="zhishidian" id="zhishidian-hidden" value="{{ kp_init_val }}">
+</div>
+
+<script>
+(function () {
+    'use strict';
+    var panel = document.getElementById('kp-tree-panel');
+    var body = document.getElementById('kp-tree-body');
+    var empty = document.getElementById('kp-tree-empty');
+    var tagsEl = document.getElementById('kp-tags');
+    var searchInput = document.getElementById('kp-search-input');
+    var hiddenInput = document.getElementById('zhishidian-hidden');
+    var toggleBtn = document.getElementById('kp-tree-toggle');
+
+    var treeData = [];       // 原始树数据
+    var selected = {};       // {kpName: true}  已选中
+    var flatMap = {};        // {kpName: {level, linked_count, xueke, chapter}}
+    var expanded = {};       // {nodeKey: true}  展开状态
+    var isLoading = false;
+
+    // ===== 初始化 =====
+    function init() {
+        // 解析初始值
+        var raw = (hiddenInput.value || '').trim();
+        if (raw) {
+            raw.replace(/；/g, ';').split(';').forEach(function (s) {
+                var n = s.trim();
+                if (n) selected[n] = true;
+            });
+        }
+        loadTree();
+        bindEvents();
+    }
+
+    // ===== 加载树数据 =====
+    function loadTree() {
+        if (isLoading) return;
+        isLoading = true;
+        fetch('/api/knowledge-points/tree', {
+            headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content || '' }
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                treeData = res.tree || [];
+                buildFlatMap(treeData);
+                render();
+                isLoading = false;
+            })
+            .catch(function () {
+                isLoading = false;
+            });
+    }
+
+    function buildFlatMap(nodes, chapterName) {
+        nodes.forEach(function (nd) {
+            var key = nd.name;
+            flatMap[key] = {
+                level: nd.level,
+                linked_count: nd.linked_count || 0,
+                xueke: nd.xueke || '',
+                chapter: nd.level === 2 ? nd.name : (nd.level === 3 ? (chapterName || '') : ''),
+            };
+            if (nd.children && nd.children.length) {
+                buildFlatMap(nd.children, nd.level === 2 ? nd.name : chapterName);
+            }
+        });
+    }
+
+    // ===== 渲染标签 =====
+    function renderTags() {
+        var names = Object.keys(selected).filter(function (k) { return selected[k]; });
+        if (names.length === 0) {
+            tagsEl.innerHTML = '<span class="text-muted small">未选择知识点</span>';
+        } else {
+            tagsEl.innerHTML = names.map(function (n) {
+                var meta = flatMap[n] || {};
+                var badgeClass = meta.level === 2 ? 'bg-secondary' : (meta.level === 3 ? 'bg-primary' : 'bg-info');
+                return '<span class="badge ' + badgeClass + ' kp-tag me-1 mb-1" style="cursor:pointer;font-size:0.85rem;">'
+                    + n + ' <i class="bi bi-x" data-kp="' + n + '" style="font-size:1rem;vertical-align:-1px;"></i></span>';
+            }).join('');
+        }
+        // 更新隐藏域
+        hiddenInput.value = names.join(';');
+    }
+
+    // ===== 渲染树 =====
+    function render() {
+        renderTags();
+        var html = buildTreeHTML(treeData, 0);
+        body.innerHTML = html || '';
+        var hasData = treeData.length > 0;
+        body.classList.toggle('d-none', !hasData);
+        empty.classList.toggle('d-none', hasData);
+        // 绑定树节点点击事件
+        body.querySelectorAll('.kp-node').forEach(function (el) {
+            el.addEventListener('click', function (e) {
+                var level = parseInt(el.dataset.level);
+                var name = el.dataset.name;
+                // 只有 level3 可勾选；level1/2 展开折叠
+                if (level === 3) {
+                    toggleSelect(name);
+                } else {
+                    toggleExpand(name);
+                }
+                e.stopPropagation();
+            });
+        });
+        // 绑定标签删除
+        tagsEl.querySelectorAll('.kp-tag i').forEach(function (icon) {
+            icon.addEventListener('click', function (e) {
+                var name = this.dataset.kp;
+                selected[name] = false;
+                delete selected[name];
+                render();
+                e.stopPropagation();
+            });
+        });
+    }
+
+    function buildTreeHTML(nodes, depth) {
+        var query = (searchInput.value || '').trim().toLowerCase();
+        var html = '';
+        nodes.forEach(function (nd) {
+            var name = nd.name;
+            var lvl = nd.level;
+            var cnt = nd.linked_count || 0;
+            var isExpanded = !!expanded[name];
+            var isChecked = lvl === 3 && !!selected[name];
+            var matchName = name.toLowerCase().indexOf(query) !== -1;
+            var hasMatchingChild = query && nd.children && nd.children.some(function (c) {
+                return c.name.toLowerCase().indexOf(query) >= 0;
+            });
+            var visible = !query || matchName || hasMatchingChild;
+
+            if (!visible && !query) return;
+
+            var icon = '';
+            if (lvl === 1) icon = '<i class="bi bi-book me-1 text-primary"></i>';
+            else if (lvl === 2) icon = '<i class="bi bi-folder2 me-1 text-warning"></i>';
+            else icon = '<i class="bi bi-dot me-1 text-secondary"></i>';
+
+            var expandIcon = '';
+            if (nd.children && nd.children.length) {
+                expandIcon = isExpanded
+                    ? '<i class="bi bi-chevron-down me-1 text-muted" style="font-size:0.7rem;"></i>'
+                    : '<i class="bi bi-chevron-right me-1 text-muted" style="font-size:0.7rem;"></i>';
+            } else {
+                expandIcon = '<span style="display:inline-block;width:16px;"></span>';
+            }
+
+            var checkIcon = '';
+            if (lvl === 3) {
+                checkIcon = isChecked
+                    ? '<i class="bi bi-check-square-fill me-1 text-success"></i>'
+                    : '<i class="bi bi-square me-1 text-muted"></i>';
+            }
+
+            var countBadge = cnt > 0 ? (' <small class="text-muted">(' + cnt + ')</small>') : '';
+            var indent = 'padding-left:' + (depth * 16 + 8) + 'px;';
+
+            var cls = 'kp-node';
+            if (lvl === 3 && isChecked) cls += ' kp-node-checked';
+            if (lvl <= 2) cls += ' kp-node-folder';
+            if (lvl === 3) cls += ' kp-node-leaf';
+
+            html += '<div class="' + cls + '" data-name="' + name + '" data-level="' + lvl + '" style="' + indent + '">';
+            html += expandIcon + checkIcon + icon + '<span>' + name + '</span>' + countBadge;
+            html += '</div>';
+
+            if (nd.children && nd.children.length && isExpanded) {
+                html += buildTreeHTML(nd.children, depth + 1);
+            } else if (nd.children && nd.children.length && query && (matchName || hasMatchingChild)) {
+                // 搜索时自动展开匹配路径
+                html += buildTreeHTML(nd.children, depth + 1);
+            }
+        });
+        return html;
+    }
+
+    // ===== 操作 =====
+    function toggleSelect(name) {
+        if (selected[name]) {
+            selected[name] = false;
+            delete selected[name];
+        } else {
+            selected[name] = true;
+        }
+        render();
+    }
+
+    function toggleExpand(name) {
+        expanded[name] = !expanded[name];
+        render();
+    }
+
+    // ===== 事件绑定 =====
+    function bindEvents() {
+        // 展开/收起面板
+        toggleBtn.addEventListener('click', function () {
+            panel.classList.toggle('d-none');
+            if (!panel.classList.contains('d-none')) {
+                // 默认展开第一个学科
+                if (treeData.length > 0 && Object.keys(expanded).length === 0) {
+                    treeData.forEach(function (r) { if (r.level === 1) expanded[r.name] = true; });
+                    render();
+                }
+            }
+        });
+
+        // 搜索输入
+        searchInput.addEventListener('input', function () {
+            render();
+            if (panel.classList.contains('d-none')) {
+                panel.classList.remove('d-none');
+            }
+        });
+
+        // 点击面板外部关闭
+        document.addEventListener('click', function (e) {
+            if (!panel.classList.contains('d-none')
+                && !panel.contains(e.target)
+                && e.target !== toggleBtn
+                && !toggleBtn.contains(e.target)
+                && e.target !== searchInput) {
+                panel.classList.add('d-none');
+            }
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+</script>
+
+<style>
+.kp-treeselect { position: relative; }
+.kp-tags { min-height: 28px; }
+.kp-tag:hover { opacity: 0.8; }
+.kp-tree-panel {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 1050;
+    max-height: 340px; overflow-y: auto;
+}
+.kp-tree-body { padding: 2px 0; }
+.kp-node {
+    cursor: pointer; padding: 4px 10px; font-size: 0.9rem;
+    border-radius: 4px; margin: 0 2px; user-select: none;
+    transition: background 0.1s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.kp-node:hover { background: var(--bs-light, #f0f0f0); }
+.kp-node-checked { background: rgba(var(--bs-primary-rgb, 13, 110, 253), 0.08); }
+.kp-node-folder { font-weight: 500; }
+[data-bs-theme="dark"] .kp-node:hover { background: rgba(255,255,255,0.06); }
+[data-bs-theme="dark"] .kp-node-checked { background: rgba(13, 110, 253, 0.15); }
+[data-bs-theme="dark"] .kp-tree-panel { background: var(--bs-body-bg, #1e1e1e); }
+[data-bs-theme="dark"] .kp-tree-body { color: var(--bs-body-color, #e0e0e0); }
+</style>

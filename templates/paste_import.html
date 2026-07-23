@@ -7,9 +7,16 @@
 <code>1. 计算 2+3 的值<br>答案：5<br>2. 解方程 x+1=0<br>答案：x=-1</code></div>
 <form method="POST">
                     <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
-    <div class="mb-2"><select name="xueke" class="form-select form-select-sm" style="max-width:150px;">
-        {% for s in subjects %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
-    </select></div>
+    <div class="row mb-2">
+        <div class="col-auto"><select name="xueke" class="form-select form-select-sm" style="min-width:140px;">
+            {% for s in subjects %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select></div>
+        <div class="col">
+            <label class="form-label small mb-1 fw-bold">知识点标签（导入后所有题统一挂载）</label>
+            {% set kp_init_val = '' %}
+            {% include '_kp_treeselect.html' %}
+        </div>
+    </div>
     <textarea name="text" class="form-control" rows="15" placeholder="在此粘贴题目内容..."
         style="font-family: monospace; font-size: 0.9rem;" required></textarea>
     <button type="submit" class="btn btn-primary mt-3"><i class="bi bi-check-lg"></i> 导入</button>

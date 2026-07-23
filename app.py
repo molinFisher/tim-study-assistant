@@ -285,6 +285,7 @@ def paste_import():
     if request.method == 'POST':
         text = request.form.get('text', '')
         xueke = request.form.get('xueke', '数学')
+        zhishidian = request.form.get('zhishidian', '')
         if not text.strip():
             flash('请粘贴题目内容', 'danger')
             return redirect(url_for('paste_import'))
@@ -308,9 +309,13 @@ def paste_import():
                     timu_lines.append(line)
             timu = '\n'.join(timu_lines).strip()
             if timu:
-                execute_db(
-                    "INSERT INTO mistake_records(uuid,sys_platform,xueke,timu,zhengquedaan,difficulty,status) VALUES(?,'web',?,?,?,3,'active')",
-                    (g.user_uuid, xueke, timu, daan))
+                mid = execute_db(
+                    "INSERT INTO mistake_records(uuid,sys_platform,xueke,timu,zhengquedaan,zhishidian,difficulty,status) VALUES(?,'web',?,?,?,?,3,'active')",
+                    (g.user_uuid, xueke, timu, daan, zhishidian))
+                # 同步知识点多层结构
+                if zhishidian:
+                    from knowledge_tree import sync_mistake_knowledge
+                    sync_mistake_knowledge(mid, xueke, zhishidian, g.user_uuid, replace=True)
                 saved += 1
         flash(f'成功导入 {saved} 道错题！', 'success')
         return redirect(url_for('question_list'))

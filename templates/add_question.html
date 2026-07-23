@@ -65,29 +65,23 @@
                         <textarea name="cuowufenxi" class="form-control" rows="3" placeholder="分析错误原因，总结经验教训..."></textarea>
                     </div>
 
-                    <!-- 知识点和难度 -->
-                    <div class="row">
-                        <div class="col-md-8 mb-3">
-                            <label class="form-label fw-bold">知识点标签</label>
-                            <input type="text" name="zhishidian" class="form-control"
-                                   list="kp-list" placeholder="输入或选择知识点..."
-                                   autocomplete="off">
-                            <datalist id="kp-list">
-                                {% for kp in knowledge_points %}
-                                <option value="{{ kp['zhishidian'] }}">
-                                {% endfor %}
-                            </datalist>
-                        </div>
-                        <div class="col-md-4 mb-3">
-                            <label class="form-label fw-bold">难度等级</label>
-                            <select name="difficulty" class="form-select">
+                    <!-- 知识点树形多选器 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">知识点标签</label>
+                        {% set kp_init_val = '' %}
+                        {% include '_kp_treeselect.html' %}
+                    </div>
+
+                    <!-- 难度 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">难度等级</label>
+                        <select name="difficulty" class="form-select" style="max-width:280px;">
                                 <option value="1">⭐ 非常简单</option>
                                 <option value="2">⭐⭐ 简单</option>
                                 <option value="3" selected>⭐⭐⭐ 中等</option>
                                 <option value="4">⭐⭐⭐⭐ 困难</option>
                                 <option value="5">⭐⭐⭐⭐⭐ 非常困难</option>
                             </select>
-                        </div>
                     </div>
 
                     <!-- 图片上传 -->

@@ -55,29 +55,23 @@
                         <textarea name="cuowufenxi" class="form-control" rows="3">{{ question['cuowufenxi'] }}</textarea>
                     </div>
 
-                    <!-- 知识点和难度 -->
-                    <div class="row">
-                        <div class="col-md-8 mb-3">
-                            <label class="form-label fw-bold">知识点标签</label>
-                            <input type="text" name="zhishidian" class="form-control"
-                                   value="{{ question['zhishidian'] }}"
-                                   list="kp-list" autocomplete="off">
-                            <datalist id="kp-list">
-                                {% for kp in knowledge_points %}
-                                <option value="{{ kp['zhishidian'] }}">
-                                {% endfor %}
-                            </datalist>
-                        </div>
-                        <div class="col-md-4 mb-3">
-                            <label class="form-label fw-bold">难度等级</label>
-                            <select name="difficulty" class="form-select">
+                    <!-- 知识点树形多选器 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">知识点标签</label>
+                        {% set kp_init_val = question['zhishidian'] %}
+                        {% include '_kp_treeselect.html' %}
+                    </div>
+
+                    <!-- 难度 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">难度等级</label>
+                        <select name="difficulty" class="form-select" style="max-width:280px;">
                                 {% for i in range(1, 6) %}
                                 <option value="{{ i }}" {% if question['difficulty'] == i %}selected{% endif %}>
                                     {{ '⭐' * i }} {% if i == 1 %}非常简单{% elif i == 2 %}简单{% elif i == 3 %}中等{% elif i == 4 %}困难{% else %}非常困难{% endif %}
                                 </option>
                                 {% endfor %}
                             </select>
-                        </div>
                     </div>
 
                     <!-- 已有图片 -->
