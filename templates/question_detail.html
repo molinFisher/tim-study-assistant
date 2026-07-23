@@ -98,7 +98,7 @@
                     </a>
                     <form method="POST" action="{{ url_for('delete_question', question_id=question['id']) }}" class="d-inline">
                     <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
-                        <button type="submit" class="btn btn-outline-danger btn-sm" data-confirm="确定要删除这道错题吗？此操作不可恢复。">
+                        <button type="submit" class="btn btn-outline-danger btn-sm" data-confirm="确定要删除这道错题吗？删除后可到回收站恢复。">
                             <i class="bi bi-trash"></i> 删除
                         </button>
                     </form>
@@ -184,6 +184,65 @@
     </div>
 </div>
 
+{% if linked_plans %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-link-45deg text-success"></i> 所属学习计划</span>
+                <div class="dropdown">
+                    <button class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+                        <i class="bi bi-plus-lg"></i> 添加到计划
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        {% for ap in all_plans %}
+                        <li><a class="dropdown-item plan-add-link" href="#" data-plan-id="{{ ap['id'] }}">{{ ap['title'] }}</a></li>
+                        {% endfor %}
+                        {% if not all_plans %}
+                        <li><span class="dropdown-item text-muted">暂无活跃计划</span></li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </div>
+            <div class="card-body py-2">
+                <div class="d-flex flex-wrap gap-1">
+                    {% for lp in linked_plans %}
+                    <a href="{{ url_for('plan_mistakes', plan_id=lp['id']) }}" class="badge bg-success text-decoration-none">
+                        {{ lp['title'] }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-link-45deg text-muted"></i> 学习计划</span>
+                {% if all_plans %}
+                <div class="dropdown">
+                    <button class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+                        <i class="bi bi-plus-lg"></i> 添加到计划
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        {% for ap in all_plans %}
+                        <li><a class="dropdown-item plan-add-link" href="#" data-plan-id="{{ ap['id'] }}">{{ ap['title'] }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-body py-2">
+                <span class="text-muted small">暂未关联任何学习计划</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% if similar %}
 <div class="row mt-4">
     <div class="col-12">
@@ -209,4 +268,22 @@
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='js/voice_recorder.js') }}"></script>
+<script>
+// 添加到学习计划
+document.querySelectorAll('.plan-add-link').forEach(link => {
+    link.addEventListener('click', function(e) {
+        e.preventDefault();
+        var planId = this.dataset.planId;
+        var csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+        fetch('/api/study-plans/' + planId + '/mistakes/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+            body: JSON.stringify({ ids: [{{ question['id'] }}] })
+        }).then(r => r.json()).then(d => {
+            alert(d.message);
+            if (d.success) location.reload();
+        });
+    });
+});
+</script>
 {% endblock %}

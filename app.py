@@ -126,6 +126,21 @@ def get_knowledge_points():
         "SELECT DISTINCT zhishidian FROM mistake_records WHERE zhishidian != '' ORDER BY zhishidian", ())
 
 
+@app.route('/api/knowledge-points/by-subject')
+@login_required
+def api_knowledge_points_by_subject():
+    """按学科获取知识点列表"""
+    xueke = request.args.get('xueke', '').strip()
+    if xueke:
+        rows = query_db(
+            "SELECT DISTINCT zhishidian FROM mistake_records WHERE xueke=? AND zhishidian != '' ORDER BY zhishidian",
+            (xueke,))
+    else:
+        rows = query_db(
+            "SELECT DISTINCT zhishidian FROM mistake_records WHERE zhishidian != '' ORDER BY zhishidian", ())
+    return jsonify([r['zhishidian'] for r in rows])
+
+
 def auto_backup():
     """每天首次调用时备份 SQLite 数据库，保留最近 7 天"""
     import time as _time
@@ -481,11 +496,28 @@ def question_detail(question_id):
     for s in similar:
         s['timu_plain'] = strip_latex(s['timu'])
 
+    # 查询该错题关联的学习计划
+    linked_plans = query_db(
+        '''SELECT sp.* FROM study_plans sp
+           JOIN plan_mistakes pm ON sp.id = pm.plan_id
+           WHERE pm.mistake_id = ? AND sp.status NOT IN ('deleted','cancelled')
+           ORDER BY sp.priority DESC''',
+        (question_id,)
+    )
+
+    # 所有活跃计划（用于"添加到计划"下拉）
+    all_plans = query_db(
+        "SELECT id, title FROM study_plans WHERE status NOT IN ('deleted','cancelled') ORDER BY title",
+        ()
+    )
+
     resp = make_response(render_template('question_detail.html',
         question=question,
         images=images,
         reviews=reviews,
-        similar=similar))
+        similar=similar,
+        linked_plans=linked_plans,
+        all_plans=all_plans))
     return set_uuid_cookie(resp, g.user_uuid)
 
 
@@ -671,15 +703,26 @@ def batch_update_questions():
 @app.route('/questions/deleted',)
 @login_required
 def question_deleted():
-    # 绕过 query_db 的自动过滤，直接查已删除的
+    page = request.args.get('page', 1, type=int)
+    per_page = 20
+    offset = (page - 1) * per_page
+
+    # 总数
+    total = query_db(
+        "SELECT COUNT(*) as cnt FROM mistake_records WHERE status = 'deleted'",
+        (), one=True
+    )['cnt']
+
+    # 分页查询
     rows = query_db(
-        "SELECT * FROM mistake_records WHERE status = 'deleted' ORDER BY bstudio_create_time DESC",
-        ()
+        "SELECT * FROM mistake_records WHERE status = 'deleted' ORDER BY bstudio_create_time DESC LIMIT ? OFFSET ?",
+        (per_page, offset)
     )
+    total_pages = max(1, (total + per_page - 1) // per_page)
     rows = rows_to_dicts(rows)
     for r in rows:
         r['timu_plain'] = strip_latex(r['timu'])
-    resp = make_response(render_template('question_deleted.html', rows=rows))
+    resp = make_response(render_template('question_deleted.html', rows=rows, page=page, total_pages=total_pages, total=total))
     return set_uuid_cookie(resp, get_or_create_uuid())
 
 
@@ -1137,28 +1180,6 @@ def api_doc_status(task_id):
 
     return jsonify(response)
 
-# ==================== 知识掌握矩阵 ====================
-
-@app.route('/knowledge-matrix',)
-@login_required
-def knowledge_matrix():
-    rows = query_db(
-        '''SELECT zhishidian,
-                  COUNT(*) as total,
-                  SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) as active_cnt,
-                  SUM(CASE WHEN status='mastered' THEN 1 ELSE 0 END) as mastered_cnt,
-                  SUM(CASE WHEN status='archived' THEN 1 ELSE 0 END) as archived_cnt
-           FROM mistake_records
-           WHERE zhishidian != ''
-           GROUP BY zhishidian
-           ORDER BY CAST(SUM(CASE WHEN status='mastered' THEN 1 ELSE 0 END) AS FLOAT)/COUNT(*) ASC''',
-        ()
-    )
-    total_all = sum(r['total'] for r in rows)
-    resp = make_response(render_template('knowledge_matrix.html', rows=rows, total_all=total_all))
-    return set_uuid_cookie(resp, get_or_create_uuid())
-
-
 # ==================== 知识点管理 ====================
 
 @app.route('/knowledge-points',)
@@ -1169,6 +1190,7 @@ def knowledge_points():
     xueke_filter = request.args.get('xueke', '')
     days_filter = request.args.get('days', '', type=int)
     status_filter = request.args.get('status', '')
+    sort = request.args.get('sort', 'total')
 
     where_clauses = ["zhishidian != ''"]
     params = []
@@ -1185,6 +1207,14 @@ def knowledge_points():
 
     where_sql = ' AND '.join(where_clauses)
 
+    order_map = {
+        'total': 'total DESC',
+        'rate_asc': 'CAST(mastered_count AS REAL) / total ASC',
+        'rate_desc': 'CAST(mastered_count AS REAL) / total DESC',
+        'name': 'zhishidian ASC',
+    }
+    order_sql = order_map.get(sort, 'total DESC')
+
     kps = query_db(
         f'''SELECT zhishidian,
                   COUNT(*) as total,
@@ -1193,7 +1223,7 @@ def knowledge_points():
            FROM mistake_records
            WHERE {where_sql}
            GROUP BY zhishidian
-           ORDER BY total DESC''',
+           ORDER BY {order_sql}''',
         params
     )
 
@@ -1202,6 +1232,7 @@ def knowledge_points():
         xueke_filter=xueke_filter,
         days_filter=days_filter or '',
         status_filter=status_filter,
+        sort=sort,
         subjects=Config.get_subjects(),
         status_options=Config.STATUS_OPTIONS))
     return set_uuid_cookie(resp, g.user_uuid)
@@ -1210,44 +1241,152 @@ def knowledge_points():
 @app.route('/api/knowledge-points/add', methods=['POST'])
 @login_required
 def api_add_knowledge_point():
-    data = request.get_json()
-    name = data.get('name', '').strip()
+    """手动添加知识点（写入 base_data + 可选创建一条占位错题记录）"""
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    xueke = (data.get('xueke') or '').strip()
     if not name:
         return jsonify({'success': False, 'message': '知识点名称不能为空'})
 
-    # 知识点和错题关联，实际知识点在错题记录的 zhishidian 字段中
-    # 此处仅验证，实际通过添加错题时关联
-    return jsonify({'success': True, 'name': name})
+    # 写入 base_data（如果不存在）
+    existing = query_db(
+        "SELECT id FROM base_data WHERE category='knowledge_point' AND name=?",
+        (name,), one=True)
+    if not existing:
+        execute_db(
+            "INSERT INTO base_data (category, name, extra, sort_order) VALUES ('knowledge_point', ?, ?, 99)",
+            (name, xueke))
+
+    return jsonify({'success': True, 'message': f'知识点「{name}」已添加'})
+
+
+@app.route('/api/knowledge-points/rename', methods=['POST'])
+@login_required
+def api_rename_knowledge_point():
+    """重命名知识点：批量更新所有关联错题的 zhishidian"""
+    data = request.get_json(silent=True) or {}
+    old_name = (data.get('old_name') or '').strip()
+    new_name = (data.get('new_name') or '').strip()
+    if not old_name or not new_name:
+        return jsonify({'success': False, 'message': '新旧名称不能为空'})
+    if old_name == new_name:
+        return jsonify({'success': False, 'message': '新旧名称相同'})
+
+    # 批量更新 mistake_records
+    cnt = execute_db(
+        "UPDATE mistake_records SET zhishidian=? WHERE zhishidian=?",
+        (new_name, old_name))
+
+    # 更新 study_plans
+    execute_db(
+        "UPDATE study_plans SET zhishidian=? WHERE zhishidian=?",
+        (new_name, old_name))
+
+    # 更新 base_data
+    execute_db(
+        "UPDATE base_data SET name=? WHERE category='knowledge_point' AND name=?",
+        (new_name, old_name))
+
+    return jsonify({'success': True, 'message': f'已将「{old_name}」重命名为「{new_name}」，更新 {cnt} 道错题', 'count': cnt})
+
+
+@app.route('/api/knowledge-points/merge', methods=['POST'])
+@login_required
+def api_merge_knowledge_points():
+    """合并知识点：将源知识点的错题全部归入目标知识点"""
+    data = request.get_json(silent=True) or {}
+    source = (data.get('source') or '').strip()
+    target = (data.get('target') or '').strip()
+    if not source or not target:
+        return jsonify({'success': False, 'message': '源和目标知识点不能为空'})
+    if source == target:
+        return jsonify({'success': False, 'message': '不能合并到自身'})
+
+    cnt = execute_db(
+        "UPDATE mistake_records SET zhishidian=? WHERE zhishidian=?",
+        (target, source))
+    execute_db(
+        "UPDATE study_plans SET zhishidian=? WHERE zhishidian=?",
+        (target, source))
+    execute_db(
+        "DELETE FROM base_data WHERE category='knowledge_point' AND name=?",
+        (source,))
+
+    return jsonify({'success': True, 'message': f'已将 {cnt} 道错题从「{source}」合并到「{target}」', 'count': cnt})
 
 
 # ==================== 学习计划 ====================
 
-@app.route('/study-plans',)
+@app.route('/study-plans')
 @login_required
 def study_plans():
     month = request.args.get('month', date.today().strftime('%Y-%m'))
+    page = request.args.get('page', 1, type=int)
+    status_filter = request.args.get('status', '')
+    xueke_filter = request.args.get('xueke', '')
+    priority_filter = request.args.get('priority', '', type=int)
+    per_page = 12
 
-    # 按月份过滤
+    # 构建查询条件
+    where = ["(target_date LIKE ? OR target_date IS NULL OR target_date='')"]
+    params = [month + '%']
+
+    if status_filter:
+        where.append('status = ?')
+        params.append(status_filter)
+    if xueke_filter:
+        where.append('xueke = ?')
+        params.append(xueke_filter)
+    if priority_filter:
+        where.append('priority >= ?')
+        params.append(priority_filter)
+
+    where_sql = ' AND '.join(where)
+
+    # 总数
+    total = query_db(
+        f"SELECT COUNT(*) as cnt FROM study_plans WHERE {where_sql}",
+        params, one=True
+    )['cnt']
+
+    offset = (page - 1) * per_page
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    # 分页查询
     plans = query_db(
-        "SELECT * FROM study_plans WHERE 1=1 AND (target_date LIKE ? OR target_date IS NULL OR target_date='') ORDER BY priority DESC, target_date ASC",
-        (month + '%',)
+        f"SELECT * FROM study_plans WHERE {where_sql} ORDER BY priority DESC, target_date ASC LIMIT ? OFFSET ?",
+        params + [per_page, offset]
     )
 
-    # 为每个计划查关联错题数和已掌握数
+    # 为每个计划查关联错题数和已掌握数（精确关联 + 模糊兜底）
     plan_mistake_counts = {}
     plan_mastered_counts = {}
+    plans = rows_to_dicts(plans)
     for p in plans:
-        if p['zhishidian']:
+        p['timu_plain'] = ''  # 计划没有 timu 字段
+        # 优先从 plan_mistakes 精确表查询
+        cnt = query_db(
+            "SELECT COUNT(*) as c FROM plan_mistakes WHERE plan_id=?",
+            (p['id'],), one=True
+        )['c']
+        if cnt == 0 and p['zhishidian']:
+            # 兜底：模糊匹配（兼容旧数据）
             cnt = query_db(
                 "SELECT COUNT(*) as c FROM mistake_records WHERE zhishidian LIKE ?",
                 ('%' + p['zhishidian'] + '%',), one=True
             )['c']
-            plan_mistake_counts[p['id']] = cnt
+        plan_mistake_counts[p['id']] = cnt
+
+        mastered = query_db(
+            "SELECT COUNT(*) as c FROM plan_mistakes pm JOIN mistake_records mr ON pm.mistake_id=mr.id WHERE pm.plan_id=? AND mr.status='mastered'",
+            (p['id'],), one=True
+        )['c']
+        if mastered == 0 and p['zhishidian']:
             mastered = query_db(
                 "SELECT COUNT(*) as c FROM mistake_records WHERE zhishidian LIKE ? AND status='mastered'",
                 ('%' + p['zhishidian'] + '%',), one=True
             )['c']
-            plan_mastered_counts[p['id']] = mastered
+        plan_mastered_counts[p['id']] = mastered
 
     # 按日分组构建日历数据
     from collections import defaultdict
@@ -1280,6 +1419,7 @@ def study_plans():
     resp = make_response(render_template('study_plan.html',
         plans=plans,
         subjects=Config.get_subjects(),
+        knowledge_points=get_knowledge_points(),
         calendar=dict(calendar),
         month=month,
         prev_month=prev_m,
@@ -1289,8 +1429,65 @@ def study_plans():
         today=date.today(),
         today_month=date.today().strftime('%Y-%m'),
         plan_mistake_counts=plan_mistake_counts,
-        plan_mastered_counts=plan_mastered_counts))
+        plan_mastered_counts=plan_mastered_counts,
+        page=page,
+        total_pages=total_pages,
+        total=total,
+        status_filter=status_filter,
+        xueke_filter=xueke_filter,
+        priority_filter=priority_filter))
     return set_uuid_cookie(resp, g.user_uuid)
+
+
+@app.route('/api/study-plans/list')
+@login_required
+def api_study_plans_list():
+    """AJAX 局部刷新计划列表（日历不动）"""
+    month = request.args.get('month', date.today().strftime('%Y-%m'))
+    page = request.args.get('page', 1, type=int)
+    status_filter = request.args.get('status', '')
+    xueke_filter = request.args.get('xueke', '')
+    priority_filter = request.args.get('priority', '', type=int)
+    per_page = 12
+
+    where = ["(target_date LIKE ? OR target_date IS NULL OR target_date='')"]
+    params = [month + '%']
+    if status_filter:
+        where.append('status = ?'); params.append(status_filter)
+    if xueke_filter:
+        where.append('xueke = ?'); params.append(xueke_filter)
+    if priority_filter:
+        where.append('priority >= ?'); params.append(priority_filter)
+    where_sql = ' AND '.join(where)
+
+    total = query_db(f"SELECT COUNT(*) as cnt FROM study_plans WHERE {where_sql}", params, one=True)['cnt']
+    offset = (page - 1) * per_page
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    plans = query_db(
+        f"SELECT * FROM study_plans WHERE {where_sql} ORDER BY priority DESC, target_date ASC LIMIT ? OFFSET ?",
+        params + [per_page, offset])
+    plans = rows_to_dicts(plans)
+
+    plan_mistake_counts = {}
+    plan_mastered_counts = {}
+    for p in plans:
+        cnt = query_db("SELECT COUNT(*) as c FROM plan_mistakes WHERE plan_id=?", (p['id'],), one=True)['c']
+        if cnt == 0 and p['zhishidian']:
+            cnt = query_db("SELECT COUNT(*) as c FROM mistake_records WHERE zhishidian LIKE ?", ('%'+p['zhishidian']+'%',), one=True)['c']
+        plan_mistake_counts[p['id']] = cnt
+        mastered = query_db("SELECT COUNT(*) as c FROM plan_mistakes pm JOIN mistake_records mr ON pm.mistake_id=mr.id WHERE pm.plan_id=? AND mr.status='mastered'", (p['id'],), one=True)['c']
+        if mastered == 0 and p['zhishidian']:
+            mastered = query_db("SELECT COUNT(*) as c FROM mistake_records WHERE zhishidian LIKE ? AND status='mastered'", ('%'+p['zhishidian']+'%',), one=True)['c']
+        plan_mastered_counts[p['id']] = mastered
+
+    return render_template('study_plan_list.html',
+        plans=plans, plan_mistake_counts=plan_mistake_counts,
+        plan_mastered_counts=plan_mastered_counts,
+        subjects=Config.get_subjects(),
+        page=page, total_pages=total_pages, total=total,
+        month=month, status_filter=status_filter,
+        xueke_filter=xueke_filter, priority_filter=priority_filter)
 
 
 @app.route('/study-plans/add', methods=['POST'])
@@ -1319,19 +1516,43 @@ def add_study_plan():
 @app.route('/study-plans/<int:plan_id>/update', methods=['POST'])
 @login_required
 def update_study_plan(plan_id):
+    """更新计划状态或编辑计划内容"""
+    # 检查是否仅更新状态（旧方式兼容）
     status = request.form.get('status', '')
-    if status == 'completed':
-        execute_db(
-            'UPDATE study_plans SET status=?, completed_at=CURRENT_TIMESTAMP WHERE id=? AND 1=1',
-            (status, plan_id)
-        )
-    else:
-        execute_db(
-            'UPDATE study_plans SET status=? WHERE id=? AND 1=1',
-            (status, plan_id)
-        )
-    flash('计划状态已更新', 'success')
-    return redirect(url_for('study_plans',))
+    if status and not request.form.get('title'):
+        if status == 'completed':
+            execute_db(
+                'UPDATE study_plans SET status=?, completed_at=CURRENT_TIMESTAMP WHERE id=?',
+                (status, plan_id)
+            )
+        else:
+            execute_db(
+                'UPDATE study_plans SET status=? WHERE id=?',
+                (status, plan_id)
+            )
+        flash('计划状态已更新', 'success')
+        return redirect(url_for('study_plans'))
+
+    # 编辑计划内容
+    title = request.form.get('title', '').strip()
+    if not title:
+        flash('计划标题不能为空', 'danger')
+        return redirect(url_for('study_plans'))
+
+    description = request.form.get('description', '').strip()
+    xueke = request.form.get('xueke', '').strip()
+    zhishidian = request.form.get('zhishidian', '').strip()
+    target_date = request.form.get('target_date', '').strip()
+    priority = request.form.get('priority', 1, type=int)
+
+    execute_db(
+        '''UPDATE study_plans
+           SET title=?, description=?, xueke=?, zhishidian=?, target_date=?, priority=?
+           WHERE id=?''',
+        (title, description, xueke, zhishidian, target_date or None, priority, plan_id)
+    )
+    flash('计划已更新', 'success')
+    return redirect(url_for('study_plans'))
 
 
 @app.route('/study-plans/<int:plan_id>/delete', methods=['POST'])
@@ -1342,19 +1563,165 @@ def delete_study_plan(plan_id):
     return redirect(url_for('study_plans',))
 
 
+@app.route('/study-plans/<int:plan_id>/pause', methods=['POST'])
+@login_required
+def pause_study_plan(plan_id):
+    execute_db("UPDATE study_plans SET status='paused' WHERE id=?", (plan_id,))
+    flash('计划已暂停', 'success')
+    return redirect(url_for('study_plans'))
+
+
+@app.route('/study-plans/<int:plan_id>/resume', methods=['POST'])
+@login_required
+def resume_study_plan(plan_id):
+    execute_db("UPDATE study_plans SET status='in_progress' WHERE id=?", (plan_id,))
+    flash('计划已恢复', 'success')
+    return redirect(url_for('study_plans'))
+
+
+@app.route('/study-plans/<int:plan_id>/mistakes')
+@login_required
+def plan_mistakes(plan_id):
+    """管理计划关联的错题"""
+    plan = query_db('SELECT * FROM study_plans WHERE id=?', (plan_id,), one=True)
+    if not plan:
+        flash('计划不存在', 'danger')
+        return redirect(url_for('study_plans'))
+
+    # 已关联的错题
+    linked = query_db(
+        '''SELECT mr.* FROM mistake_records mr
+           JOIN plan_mistakes pm ON mr.id = pm.mistake_id
+           WHERE pm.plan_id = ? AND 1=1
+           ORDER BY mr.bstudio_create_time DESC''',
+        (plan_id,)
+    )
+    linked = rows_to_dicts(linked)
+    for q in linked:
+        q['timu_plain'] = strip_latex(q['timu'])
+
+    # 推荐错题：优先按知识点，兜底按学科
+    suggested = []
+    if plan['zhishidian']:
+        suggested = query_db(
+            '''SELECT mr.* FROM mistake_records mr
+               WHERE mr.zhishidian LIKE ? AND 1=1
+               AND mr.id NOT IN (SELECT mistake_id FROM plan_mistakes WHERE plan_id=?)
+               ORDER BY mr.bstudio_create_time DESC LIMIT 20''',
+            ('%' + plan['zhishidian'] + '%', plan_id)
+        )
+    elif plan['xueke']:
+        suggested = query_db(
+            '''SELECT mr.* FROM mistake_records mr
+               WHERE mr.xueke = ? AND 1=1
+               AND mr.id NOT IN (SELECT mistake_id FROM plan_mistakes WHERE plan_id=?)
+               ORDER BY mr.bstudio_create_time DESC LIMIT 20''',
+            (plan['xueke'], plan_id)
+        )
+    else:
+        suggested = query_db(
+            '''SELECT mr.* FROM mistake_records mr
+               WHERE 1=1
+               AND mr.id NOT IN (SELECT mistake_id FROM plan_mistakes WHERE plan_id=?)
+               ORDER BY mr.bstudio_create_time DESC LIMIT 20''',
+            (plan_id,)
+        )
+    suggested = rows_to_dicts(suggested)
+    for q in suggested:
+        q['timu_plain'] = strip_latex(q['timu'])
+
+    resp = make_response(render_template('plan_mistakes.html',
+        plan=plan, linked=linked, suggested=suggested,
+        subjects=Config.get_subjects()))
+    return set_uuid_cookie(resp, g.user_uuid)
+
+
+@app.route('/api/study-plans/<int:plan_id>/mistakes/add', methods=['POST'])
+@login_required
+def api_plan_mistakes_add(plan_id):
+    """添加错题到计划"""
+    data = request.get_json(silent=True) or {}
+    ids = data.get('ids', [])
+    if not isinstance(ids, list) or not ids:
+        return jsonify({'success': False, 'message': '未选择错题'})
+    added = 0
+    for mid in ids:
+        try:
+            execute_db(
+                'INSERT OR IGNORE INTO plan_mistakes (plan_id, mistake_id) VALUES (?, ?)',
+                (plan_id, int(mid))
+            )
+            added += 1
+        except Exception:
+            pass
+    return jsonify({'success': True, 'message': f'已添加 {added} 道错题', 'added': added})
+
+
+@app.route('/api/study-plans/<int:plan_id>/mistakes/remove', methods=['POST'])
+@login_required
+def api_plan_mistakes_remove(plan_id):
+    """从计划移除错题"""
+    data = request.get_json(silent=True) or {}
+    ids = data.get('ids', [])
+    if not isinstance(ids, list) or not ids:
+        return jsonify({'success': False, 'message': '未选择错题'})
+    for mid in ids:
+        execute_db(
+            'DELETE FROM plan_mistakes WHERE plan_id=? AND mistake_id=?',
+            (plan_id, int(mid))
+        )
+    return jsonify({'success': True, 'message': f'已移除 {len(ids)} 道错题'})
+
+
+@app.route('/api/study-plans/<int:plan_id>/mistakes/auto', methods=['POST'])
+@login_required
+def api_plan_mistakes_auto(plan_id):
+    """自动将匹配知识点的错题加入计划"""
+    plan = query_db('SELECT * FROM study_plans WHERE id=?', (plan_id,), one=True)
+    if not plan or not plan['zhishidian']:
+        return jsonify({'success': False, 'message': '计划未关联知识点'})
+    mistakes = query_db(
+        '''SELECT id FROM mistake_records
+           WHERE zhishidian LIKE ? AND 1=1
+           AND id NOT IN (SELECT mistake_id FROM plan_mistakes WHERE plan_id=?)''',
+        ('%' + plan['zhishidian'] + '%', plan_id)
+    )
+    added = 0
+    for m in mistakes:
+        try:
+            execute_db(
+                'INSERT OR IGNORE INTO plan_mistakes (plan_id, mistake_id) VALUES (?, ?)',
+                (plan_id, m['id'])
+            )
+            added += 1
+        except Exception:
+            pass
+    return jsonify({'success': True, 'message': f'自动匹配 {added} 道错题', 'added': added})
+
+
 @app.route('/api/study-plans/<int:plan_id>/review', methods=['POST'])
+@login_required
 def api_study_plan_review(plan_id):
-    """将学习计划关联的错题加入今日复习"""
+    """将学习计划关联的错题加入今日复习（优先精确关联，兜底模糊匹配）"""
     plan = query_db('SELECT * FROM study_plans WHERE id=?', (plan_id,), one=True)
     if not plan:
         return jsonify({'success': False, 'message': '计划不存在'})
-    kp = plan['zhishidian'] or ''
-    if not kp:
-        return jsonify({'success': False, 'message': '该计划未关联知识点'})
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # 优先从 plan_mistakes 精确关联
     cnt = execute_db(
-        "UPDATE mistake_records SET next_review_at=?, review_stage=0, status='active' WHERE zhishidian LIKE ? AND status != 'deleted'",
-        (now, '%' + kp + '%'))
+        '''UPDATE mistake_records SET next_review_at=?, review_stage=0, status='active'
+           WHERE id IN (SELECT mistake_id FROM plan_mistakes WHERE plan_id=?)
+           AND status != 'deleted' AND status != 'mastered' ''',
+        (now, plan_id))
+
+    # 兜底：知识点模糊匹配
+    if cnt == 0 and plan['zhishidian']:
+        kp = plan['zhishidian']
+        cnt = execute_db(
+            "UPDATE mistake_records SET next_review_at=?, review_stage=0, status='active' WHERE zhishidian LIKE ? AND status NOT IN ('deleted','mastered')",
+            (now, '%' + kp + '%'))
+
     return jsonify({'success': True, 'message': f'已加入 {cnt} 道错题到今日复习', 'count': cnt})
 
 
@@ -1439,14 +1806,14 @@ def review_plan():
 @app.route('/api/review/add-all', methods=['POST'])
 @login_required
 def api_review_add_all():
-    """一键将所有活跃但未排期的错题加入复习"""
+    """一键将所有活跃但未排期的错题加入复习（排除已掌握的）"""
     from datetime import datetime
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     execute_db(
-        "UPDATE mistake_records SET next_review_at=?, review_stage=0, status='active' WHERE status='active' AND next_review_at IS NULL",
+        "UPDATE mistake_records SET next_review_at=?, review_stage=0 WHERE status='active' AND next_review_at IS NULL",
         (now,)
     )
-    # 也把今天之前的重置到今天
+    # 也把今天之前的重置到今天（排除已掌握）
     today_str = date.today().isoformat()
     execute_db(
         "UPDATE mistake_records SET next_review_at=? WHERE status='active' AND next_review_at IS NOT NULL AND date(next_review_at) < ?",
@@ -1574,7 +1941,7 @@ def statistics():
     zp_bar = None
     if zp_stats:
         zp_bar = generate_bar_chart(
-            [r['zhishidian'][:6] for r in zp_stats],
+            [r['zhishidian'][:12] for r in zp_stats],
             [r['cnt'] for r in zp_stats],
             '知识点错题分布 Top 10', '知识点', '错题数'
         )
@@ -1665,12 +2032,6 @@ def statistics():
 
 
 # ==================== 错题统计分析报告 ====================
-
-@app.route('/report',)
-@login_required
-def report():
-    return redirect(url_for('statistics'))
-
 
 # ==================== 导出 ====================
 

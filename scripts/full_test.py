@@ -67,7 +67,6 @@ pages = {
     '/statistics': '错误类型分布',
     '/review': '今日待复习',
     '/study-plans': 'calendar-grid',
-    '/knowledge-matrix': 'progress-bar',
     '/knowledge-points': '掌握率',
     '/questions/deleted': '回收站',
 }

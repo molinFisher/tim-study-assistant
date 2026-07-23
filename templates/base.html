@@ -16,6 +16,10 @@
     {% block extra_head %}{% endblock %}
 </head>
 <body>
+    <!-- 全局加载指示器 -->
+    <div id="global-loading" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.3);z-index:9999;justify-content:center;align-items:center;">
+        <div class="spinner-border text-primary" style="width:3rem;height:3rem" role="status"><span class="visually-hidden">加载中...</span></div>
+    </div>
     <!-- 导航栏 -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
         <div class="container">
@@ -43,11 +47,6 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/knowledge-matrix' %}active{% endif %}" href="{{ url_for('knowledge_matrix') }}">
-                            <i class="bi bi-grid-3x3-gap"></i> 掌握矩阵
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link {% if request.path.startswith('/study-plans') %}active{% endif %}" href="{{ url_for('study_plans') }}">
                             <i class="bi bi-calendar-check"></i> 学习计划
                         </a>
@@ -65,8 +64,15 @@
                 </ul>
                 <button id="dark-toggle" class="btn btn-outline-light btn-sm ms-2" title="切换暗色模式" onclick="toggleDark()">🌙</button>
                 {% if session.username %}
-                <span class="navbar-text text-light ms-2 small">{{ session.username }}</span>
-                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm ms-1">退出</a>
+                <div class="dropdown ms-2">
+                    <button class="btn btn-outline-light btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+                        {{ session.username }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="{{ url_for('api_tokens_page') }}"><i class="bi bi-key"></i> API Token</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> 退出</a></li>
+                    </ul>
+                </div>
                 {% endif %}
             </div>
         </div>

@@ -2,15 +2,23 @@
 {% block title %}知识点管理 - Tim 学习助手{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h2 class="fw-bold mb-0"><i class="bi bi-tags text-primary"></i> 知识点管理</h2>
+    <div class="d-flex gap-2">
+        <input type="text" id="kp-search" class="form-control form-control-sm" placeholder="搜索知识点..." style="width:200px" oninput="filterKps()">
+        <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addKpModal">
+            <i class="bi bi-plus-lg"></i> 新增
+        </button>
+        <button class="btn btn-outline-warning btn-sm" id="merge-btn" onclick="startMerge()" disabled>
+            <i class="bi bi-intersect"></i> 合并选中
+        </button>
+    </div>
 </div>
 
 <!-- 筛选栏 -->
 <div class="filter-bar mb-3">
     <form method="GET" class="row g-2 align-items-end">
-        <div class="col-md-3">
-            <label class="form-label small fw-bold">学科</label>
+        <div class="col-md-2">
             <select name="xueke" class="form-select form-select-sm">
                 <option value="">全部学科</option>
                 {% for s in subjects %}
@@ -19,7 +27,6 @@
             </select>
         </div>
         <div class="col-md-2">
-            <label class="form-label small fw-bold">时间范围</label>
             <select name="days" class="form-select form-select-sm">
                 <option value="">全部时间</option>
                 <option value="7" {% if days_filter|string == '7' %}selected{% endif %}>最近 7 天</option>
@@ -27,57 +34,74 @@
                 <option value="90" {% if days_filter|string == '90' %}selected{% endif %}>最近 90 天</option>
             </select>
         </div>
-        <div class="col-md-3">
-            <label class="form-label small fw-bold">掌握程度</label>
+        <div class="col-md-2">
             <select name="status" class="form-select form-select-sm">
                 <option value="">全部状态</option>
                 {% for key, label in status_options.items() %}
+                {% if key != 'deleted' %}
                 <option value="{{ key }}" {% if status_filter == key %}selected{% endif %}>{{ label }}</option>
+                {% endif %}
                 {% endfor %}
             </select>
         </div>
         <div class="col-md-2">
-            <button type="submit" class="btn btn-primary btn-sm w-100">
-                <i class="bi bi-funnel"></i> 筛选
-            </button>
+            <select name="sort" class="form-select form-select-sm">
+                <option value="total" {% if sort == 'total' %}selected{% endif %}>按题数排序</option>
+                <option value="rate_asc" {% if sort == 'rate_asc' %}selected{% endif %}>掌握率 ↑</option>
+                <option value="rate_desc" {% if sort == 'rate_desc' %}selected{% endif %}>掌握率 ↓</option>
+                <option value="name" {% if sort == 'name' %}selected{% endif %}>按名称排序</option>
+            </select>
         </div>
         <div class="col-md-2">
-            <a href="{{ url_for('knowledge_points') }}" class="btn btn-outline-secondary btn-sm w-100">
-                <i class="bi bi-arrow-counterclockwise"></i> 重置
-            </a>
+            <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-funnel"></i> 筛选</button>
+        </div>
+        <div class="col-md-2">
+            <a href="{{ url_for('knowledge_points') }}" class="btn btn-outline-secondary btn-sm w-100">重置</a>
         </div>
     </form>
 </div>
 
 {% if kps %}
 <div class="table-responsive">
-    <table class="table table-hover">
+    <table class="table table-hover" id="kp-table">
         <thead>
             <tr>
+                <th style="width:40px"><input type="checkbox" id="kp-select-all" onchange="toggleAllKps(this)"></th>
                 <th>知识点</th>
                 <th class="text-center">总题数</th>
                 <th class="text-center">活跃</th>
                 <th class="text-center">已掌握</th>
-                <th>掌握率</th>
+                <th style="min-width:120px">掌握率</th>
+                <th style="width:120px">操作</th>
             </tr>
         </thead>
         <tbody>
             {% for kp in kps %}
-            <tr>
+            <tr class="kp-row" data-name="{{ kp['zhishidian'] }}">
+                <td><input type="checkbox" class="kp-cb" value="{{ kp['zhishidian'] }}" data-name="{{ kp['zhishidian'] }}"></td>
                 <td>
-                    <span class="knowledge-badge fs-6">{{ kp['zhishidian'] }}</span>
+                    <a href="{{ url_for('question_list', zhishidian=kp['zhishidian']) }}" class="text-decoration-none fw-bold">
+                        <span class="knowledge-badge fs-6">{{ kp['zhishidian'] }}</span>
+                    </a>
                 </td>
                 <td class="text-center fw-bold">{{ kp['total'] }}</td>
                 <td class="text-center">{{ kp['active_count'] }}</td>
                 <td class="text-center text-success fw-bold">{{ kp['mastered_count'] }}</td>
                 <td>
                     <div class="d-flex align-items-center gap-2">
-                        <div class="progress flex-grow-1" style="height: 8px;">
+                        <div class="progress flex-grow-1" style="height:8px">
                             {% set pct = (kp['mastered_count'] / kp['total'] * 100) if kp['total'] > 0 else 0 %}
-                            <div class="progress-bar bg-success" style="width: {{ pct|int }}%"></div>
+                            <div class="progress-bar {% if pct < 30 %}bg-danger{% elif pct < 70 %}bg-warning{% else %}bg-success{% endif %}"
+                                 style="width:{{ pct|int }}%"></div>
                         </div>
-                        <small class="text-muted">{{ pct|int }}%</small>
+                        <small class="text-muted" style="min-width:35px">{{ pct|int }}%</small>
                     </div>
+                </td>
+                <td>
+                    <button class="btn btn-outline-secondary btn-sm py-0 px-1" title="重命名"
+                            onclick="renameKp('{{ kp['zhishidian']|e }}')">
+                        <i class="bi bi-pencil"></i>
+                    </button>
                 </td>
             </tr>
             {% endfor %}
@@ -94,4 +118,182 @@
     </a>
 </div>
 {% endif %}
+
+<!-- 新增知识点弹窗 -->
+<div class="modal fade" id="addKpModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-plus-circle"></i> 新增知识点</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">知识点名称 <span class="text-danger">*</span></label>
+                    <input type="text" id="new-kp-name" class="form-control" placeholder="例如：一元二次方程">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">所属学科</label>
+                    <select id="new-kp-xueke" class="form-select">
+                        <option value="">不限</option>
+                        {% for s in subjects %}
+                        <option value="{{ s }}">{{ s }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="addKp()">创建</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 重命名弹窗 -->
+<div class="modal fade" id="renameKpModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> 重命名知识点</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="rename-old-name">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">新名称 <span class="text-danger">*</span></label>
+                    <input type="text" id="rename-new-name" class="form-control" placeholder="输入新名称">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="doRename()">确认重命名</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 合并确认弹窗 -->
+<div class="modal fade" id="mergeKpModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-intersect"></i> 合并知识点</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>已选中 <strong id="merge-source-count">0</strong> 个知识点，请选择合并到：</p>
+                <select id="merge-target" class="form-select">
+                    <option value="">-- 选择目标知识点 --</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-warning" onclick="doMerge()">确认合并</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+var csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+// 搜索过滤
+function filterKps() {
+    var kw = document.getElementById('kp-search').value.toLowerCase();
+    document.querySelectorAll('.kp-row').forEach(function(row) {
+        row.style.display = kw === '' || row.dataset.name.toLowerCase().includes(kw) ? '' : 'none';
+    });
+}
+
+// 全选
+function toggleAllKps(master) {
+    document.querySelectorAll('.kp-cb').forEach(function(cb) { cb.checked = master.checked; });
+    updateMergeBtn();
+}
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('kp-cb')) updateMergeBtn();
+});
+function updateMergeBtn() {
+    var cnt = document.querySelectorAll('.kp-cb:checked').length;
+    document.getElementById('merge-btn').disabled = cnt < 2;
+    document.getElementById('merge-btn').textContent = cnt >= 2 ? '合并选中(' + cnt + ')' : '合并选中';
+}
+
+// 新增知识点
+function addKp() {
+    var name = document.getElementById('new-kp-name').value.trim();
+    var xueke = document.getElementById('new-kp-xueke').value;
+    if (!name) { alert('请输入知识点名称'); return; }
+    fetch('/api/knowledge-points/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ name: name, xueke: xueke })
+    }).then(r => r.json()).then(d => {
+        alert(d.message);
+        if (d.success) location.reload();
+    });
+}
+
+// 重命名
+function renameKp(oldName) {
+    document.getElementById('rename-old-name').value = oldName;
+    document.getElementById('rename-new-name').value = oldName;
+    new bootstrap.Modal(document.getElementById('renameKpModal')).show();
+}
+function doRename() {
+    var oldName = document.getElementById('rename-old-name').value;
+    var newName = document.getElementById('rename-new-name').value.trim();
+    if (!newName || oldName === newName) { alert('请输入不同的新名称'); return; }
+    fetch('/api/knowledge-points/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ old_name: oldName, new_name: newName })
+    }).then(r => r.json()).then(d => {
+        alert(d.message);
+        if (d.success) location.reload();
+    });
+}
+
+// 合并
+function startMerge() {
+    var checked = document.querySelectorAll('.kp-cb:checked');
+    var names = [];
+    checked.forEach(function(cb) { names.push(cb.dataset.name); });
+    document.getElementById('merge-source-count').textContent = names.length;
+
+    var sel = document.getElementById('merge-target');
+    sel.innerHTML = '<option value="">-- 选择目标知识点 --</option>';
+    names.forEach(function(n) {
+        var opt = document.createElement('option');
+        opt.value = n; opt.textContent = n;
+        sel.appendChild(opt);
+    });
+
+    new bootstrap.Modal(document.getElementById('mergeKpModal')).show();
+}
+function doMerge() {
+    var target = document.getElementById('merge-target').value;
+    if (!target) { alert('请选择合并到的目标知识点'); return; }
+    var checked = document.querySelectorAll('.kp-cb:checked');
+    var sources = [];
+    checked.forEach(function(cb) { if (cb.dataset.name !== target) sources.push(cb.dataset.name); });
+    if (sources.length === 0) { alert('没有可合并的知识点'); return; }
+    if (!confirm('确定将 ' + sources.length + ' 个知识点合并到「' + target + '」？\n\n这将把源知识点下的所有错题归入目标知识点。')) return;
+
+    var done = 0, total = sources.length;
+    sources.forEach(function(src) {
+        fetch('/api/knowledge-points/merge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+            body: JSON.stringify({ source: src, target: target })
+        }).then(r => r.json()).then(d => {
+            done++;
+            if (done >= total) { alert('合并完成！'); location.reload(); }
+        });
+    });
+}
+</script>
 {% endblock %}

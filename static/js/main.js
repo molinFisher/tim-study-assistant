@@ -2,6 +2,31 @@
  * Tim 学习助手 - 前端交互逻辑
  */
 
+// 全局 fetch 拦截 — 自动显示/隐藏 loading
+(function() {
+    var _fetch = window.fetch;
+    var pending = 0;
+    window.fetch = function(url, opts) {
+        opts = opts || {};
+        var method = (opts.method || 'GET').toUpperCase();
+        if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+            pending++;
+            var loader = document.getElementById('global-loading');
+            if (loader) loader.style.display = 'flex';
+        }
+        return _fetch.call(window, url, opts).finally(function() {
+            if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+                pending--;
+                if (pending <= 0) {
+                    pending = 0;
+                    var loader = document.getElementById('global-loading');
+                    if (loader) loader.style.display = 'none';
+                }
+            }
+        });
+    };
+})();
+
 document.addEventListener('DOMContentLoaded', function () {
     // 初始化所有功能
     initDeleteConfirm();
@@ -98,75 +123,6 @@ function initSearchFilter() {
             if (form) form.submit();
         }, 500);
     });
-}
-
-// ========== 复习卡片交互 ==========
-function submitReview(mistakeId, result) {
-    const timeSpent = document.getElementById('review-time-spent');
-    const notes = document.getElementById('review-notes');
-
-    fetch(`/api/review/${mistakeId}/submit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            result: result,
-            time_spent: timeSpent ? parseInt(timeSpent.value) || 0 : 0,
-            notes: notes ? notes.value : ''
-        })
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            // 显示结果
-            const card = document.getElementById(`review-card-${mistakeId}`);
-            if (card) {
-                card.style.transition = 'transform 0.3s, opacity 0.3s';
-                card.style.transform = 'translateX(100px)';
-                card.style.opacity = '0';
-                setTimeout(() => {
-                    card.remove();
-                    // 检查是否还有待复习的卡片
-                    const remaining = document.querySelectorAll('.review-card-item');
-                    if (remaining.length === 0) {
-                        showReviewComplete();
-                    }
-                }, 300);
-            }
-
-            // 更新计数
-            const reviewedBadge = document.getElementById('reviewed-count');
-            const remainingBadge = document.getElementById('remaining-count');
-            if (reviewedBadge) {
-                reviewedBadge.textContent = parseInt(reviewedBadge.textContent) + 1;
-            }
-            if (remainingBadge) {
-                const rem = parseInt(remainingBadge.textContent) - 1;
-                remainingBadge.textContent = Math.max(0, rem);
-            }
-        } else {
-            alert('提交失败: ' + (data.message || '未知错误'));
-        }
-    })
-    .catch(err => {
-        console.error('复习提交错误:', err);
-        alert('网络错误，请重试');
-    });
-}
-
-function showReviewComplete() {
-    const container = document.getElementById('review-cards-container');
-    if (container) {
-        container.innerHTML = `
-            <div class="text-center py-5">
-                <i class="bi bi-check-circle-fill text-success" style="font-size: 4rem;"></i>
-                <h3 class="mt-3">今日复习完成！</h3>
-                <p class="text-muted">你已经完成了今天所有的复习任务，太棒了！</p>
-                <a href="/" class="btn btn-primary mt-2">
-                    <i class="bi bi-house-door"></i> 返回首页
-                </a>
-            </div>
-        `;
-    }
 }
 
 // ========== 图片删除（在编辑页面） ==========

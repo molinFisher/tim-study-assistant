@@ -316,6 +316,38 @@ main {
 [data-bs-theme="dark"] .text-dark { color: #e0e0e0 !important; }
 [data-bs-theme="dark"] .btn-outline-primary { color: #90caf9; border-color: #90caf9; }
 
+/* 暗色模式 — 统计卡片 */
+[data-bs-theme="dark"] .stat-card { color: #e0e0e0 !important; }
+[data-bs-theme="dark"] .stat-card .stat-label { color: #aaa !important; }
+[data-bs-theme="dark"] .stat-card.primary { background: linear-gradient(135deg, #1a237e, #283593) !important; }
+[data-bs-theme="dark"] .stat-card.warning { background: linear-gradient(135deg, #e65100, #f57c00) !important; }
+[data-bs-theme="dark"] .stat-card.success { background: linear-gradient(135deg, #1b5e20, #2e7d32) !important; }
+[data-bs-theme="dark"] .stat-card.danger { background: linear-gradient(135deg, #b71c1c, #c62828) !important; }
+
+/* 暗色模式 — 答案对比区 */
+[data-bs-theme="dark"] .answer-box { color: #e0e0e0; }
+[data-bs-theme="dark"] .answer-box.student { background: #3e2723; border-left-color: #e65100; }
+[data-bs-theme="dark"] .answer-box.correct { background: #1b3a1b; border-left-color: #2e7d32; }
+[data-bs-theme="dark"] .answer-box.analysis { background: #1a237e; border-left-color: #5c6bc0; }
+
+/* 暗色模式 — 复习卡片 */
+[data-bs-theme="dark"] .review-card .card-body { background: #16213e; }
+[data-bs-theme="dark"] .review-card .question-content { background: #1a1a2e; color: #ddd; border: 1px solid #0f3460; }
+
+/* 暗色模式 — 下拉菜单和输入框 */
+[data-bs-theme="dark"] .dropdown-menu { background: #16213e; border-color: #0f3460; }
+[data-bs-theme="dark"] .dropdown-item { color: #e0e0e0; }
+[data-bs-theme="dark"] .dropdown-item:hover { background: #0f3460; }
+[data-bs-theme="dark"] .form-control, [data-bs-theme="dark"] .form-select { background: #1a1a2e; color: #e0e0e0; border-color: #0f3460; }
+[data-bs-theme="dark"] .form-control:focus, [data-bs-theme="dark"] .form-select:focus { background: #1a1a2e; color: #e0e0e0; }
+
+/* 暗色模式 — 进度条 */
+[data-bs-theme="dark"] .progress { background: #1a1a2e; }
+
+/* 暗色模式 — 图表容器 */
+[data-bs-theme="dark"] .chart-container { background: #16213e; }
+[data-bs-theme="dark"] .chart-container img { filter: brightness(0.9); }
+
 /* 响应式 */
 @media (max-width: 768px) {
     .answer-compare {
@@ -325,6 +357,9 @@ main {
     .stat-card .stat-value {
         font-size: 1.5rem;
     }
+
+    /* 移动端导航 — 复习入口高亮 */
+    .navbar-nav .nav-item:nth-child(5) { border-top: 1px solid rgba(255,255,255,0.2); margin-top: 4px; padding-top: 4px; }
 
     .review-card .card-body {
         padding: 1.2rem;

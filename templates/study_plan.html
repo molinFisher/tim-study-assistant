@@ -5,7 +5,6 @@
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h2 class="fw-bold mb-0"><i class="bi bi-calendar-check text-primary"></i> 学习计划</h2>
     <div class="d-flex gap-2">
-        <!-- 月份导航 -->
         <a href="?month={{ prev_month }}" class="btn btn-outline-secondary btn-sm">&laquo;</a>
         <span class="btn btn-light btn-sm fw-bold disabled">{{ month_label }}</span>
         <a href="?month={{ next_month }}" class="btn btn-outline-secondary btn-sm">&raquo;</a>
@@ -15,7 +14,7 @@
     </div>
 </div>
 
-<!-- 日历视图 -->
+<!-- 日历视图（不随筛选刷新） -->
 <div class="card mb-4 border-0 shadow-sm">
     <div class="card-body p-2">
         <div class="calendar-grid">
@@ -26,17 +25,24 @@
                 <div class="calendar-day empty"></div>
                 {% else %}
                 {% set ds = '%s-%s-%s'|format(month.split('-')[0], month.split('-')[1], '%02d'|format(d)) %}
-                <div class="calendar-day {% if d == today.day and month == today_month %}today{% endif %}">
+                <div class="calendar-day {% if d == today.day and month == today_month %}today{% endif %}"
+                     onclick="quickAddPlan('{{ ds }}')" title="点击空白处创建当日计划" style="cursor:pointer">
                     <div class="day-num">{{ d }}</div>
                     {% if calendar.get(ds) %}
                     <div class="day-plans">
-                        {% for p in calendar[ds][:2] %}
-                        <div class="day-plan-item badge bg-{{ 'success' if p['status']=='completed' else 'warning' if p['status']=='in_progress' else 'info' }}" title="{{ p['title'] }}">
+                        {% for p in calendar[ds][:6] %}
+                        <div class="day-plan-item badge bg-{{ 'success' if p['status']=='completed' else 'warning' if p['status']=='in_progress' else 'info' }}"
+                             title="点击编辑：{{ p['title'] }}" style="cursor:pointer"
+                             onclick="event.stopPropagation();editPlan({{ p['id'] }}, '{{ p['title']|e }}', '{{ (p['description'] or '')|e }}', '{{ p['xueke'] }}', '{{ p['zhishidian'] }}', '{{ p['target_date'] or '' }}', {{ p['priority'] }})">
                             {{ p['title'][:8] }}
                         </div>
                         {% endfor %}
-                        {% if calendar[ds]|length > 2 %}
-                        <small class="text-muted">+{{ calendar[ds]|length - 2 }}</small>
+                        {% if calendar[ds]|length > 6 %}
+                        <small class="text-muted more-plans" style="cursor:pointer;font-weight:bold;"
+                               data-bs-toggle="tooltip" data-bs-html="true"
+                               title="{% for p in calendar[ds][6:] %}{{ p['title'] }}{% if not loop.last %}<br>{% endif %}{% endfor %}">
+                            +{{ calendar[ds]|length - 6 }}
+                        </small>
                         {% endif %}
                     </div>
                     {% endif %}
@@ -47,92 +53,9 @@
     </div>
 </div>
 
-<!-- 计划列表 -->
-<div class="row g-3">
-    {% if plans %}
-    {% for plan in plans %}
-    <div class="col-md-6 col-lg-4">
-        <div class="card h-100">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                    <h6 class="fw-bold mb-0">{{ plan['title'] }}</h6>
-                    <span class="badge bg-{{ 'success' if plan['status'] == 'completed' else 'warning' if plan['status'] == 'in_progress' else 'secondary' if plan['status'] == 'cancelled' else 'info' }}">
-                        {{ {'pending': '待开始', 'in_progress': '进行中', 'completed': '已完成', 'cancelled': '已取消'}[plan['status']] }}
-                    </span>
-                </div>
-                {% if plan['description'] %}
-                <p class="text-muted small mb-2">{{ plan['description'][:100] }}</p>
-                {% endif %}
-                <div class="d-flex flex-wrap gap-1 mb-2">
-                    {% if plan['xueke'] %}
-                    <span class="badge bg-primary">{{ plan['xueke'] }}</span>
-                    {% endif %}
-                    {% if plan['zhishidian'] %}
-                    <span class="knowledge-badge">{{ plan['zhishidian'] }}</span>
-                    {% endif %}
-                    <span class="badge bg-light text-dark">
-                        {% if plan['priority'] >= 4 %}🔴{% elif plan['priority'] >= 2 %}🟡{% else %}🟢{% endif %}
-                        优先级 {{ plan['priority'] }}
-                    </span>
-                </div>
-                {% if plan['target_date'] %}
-                <small class="text-muted">目标日期：{{ plan['target_date'] }}</small>
-                {% endif %}
-                {% set mc = plan_mistake_counts.get(plan['id'], 0) %}
-                {% set md = plan_mastered_counts.get(plan['id'], 0) %}
-                {% if mc > 0 %}
-                <div class="mt-1">
-                    <div class="d-flex justify-content-between small text-muted">
-                        <span>📚 {{ mc }} 道关联错题</span><span>{{ md }}/{{ mc }} 已掌握</span>
-                    </div>
-                    <div class="progress" style="height:6px;border-radius:3px;">
-                        <div class="progress-bar bg-success" style="width:{{ (md/mc*100)|int }}%"></div>
-                    </div>
-                </div>
-                {% endif %}
-                <div class="mt-2 d-flex gap-1">
-                    {% if plan['status'] == 'pending' %}
-                    <form method="POST" action="{{ url_for('update_study_plan', plan_id=plan['id']) }}" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
-                        <input type="hidden" name="status" value="in_progress">
-                        <button class="btn btn-warning btn-sm">开始</button>
-                    </form>
-                    {% elif plan['status'] == 'in_progress' %}
-                    <form method="POST" action="{{ url_for('update_study_plan', plan_id=plan['id']) }}" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
-                        <input type="hidden" name="status" value="completed">
-                        <button class="btn btn-success btn-sm">完成</button>
-                    </form>
-                    {% endif %}
-                    {% set mc = plan_mistake_counts.get(plan['id'], 0) %}
-                    {% if mc > 0 %}
-                    <button class="btn btn-outline-info btn-sm" onclick="reviewPlan({{ plan['id'] }})">
-                        📝 开始复习
-                    </button>
-                    {% endif %}
-                    <form method="POST" action="{{ url_for('delete_study_plan', plan_id=plan['id']) }}" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
-                        <button class="btn btn-outline-danger btn-sm" data-confirm="确定删除这个学习计划吗？">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endfor %}
-    {% else %}
-    <div class="col-12">
-        <div class="text-center py-5">
-            <i class="bi bi-calendar-plus" style="font-size: 4rem; color: #ccc;"></i>
-            <h4 class="text-muted mt-3">还没有学习计划</h4>
-            <p class="text-muted">制定你的学习计划，让复习更有条理！</p>
-            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addPlanModal">
-                <i class="bi bi-plus-lg"></i> 创建第一个计划
-            </button>
-        </div>
-    </div>
-    {% endif %}
+<!-- 计划列表（AJAX 局部刷新） -->
+<div id="plans-container">
+{% include 'study_plan_list.html' %}
 </div>
 
 <!-- 新建计划弹窗 -->
@@ -157,7 +80,7 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label fw-bold">目标学科</label>
-                            <select name="xueke" class="form-select">
+                            <select name="xueke" class="form-select" onchange="loadKnowledgePoints(this.value, 'kp-list')">
                                 <option value="">不限</option>
                                 {% for s in subjects %}
                                 <option value="{{ s }}">{{ s }}</option>
@@ -166,13 +89,18 @@
                         </div>
                         <div class="col-md-6 mb-3">
                             <label class="form-label fw-bold">目标日期</label>
-                            <input type="date" name="target_date" class="form-control">
+                            <input type="date" name="target_date" id="plan-target-date" class="form-control">
                         </div>
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label fw-bold">知识点</label>
-                            <input type="text" name="zhishidian" class="form-control" placeholder="可选">
+                            <input type="text" name="zhishidian" class="form-control" list="kp-list" placeholder="输入或选择" autocomplete="off">
+                            <datalist id="kp-list">
+                                {% for kp in knowledge_points %}
+                                <option value="{{ kp['zhishidian'] }}">
+                                {% endfor %}
+                            </datalist>
                         </div>
                         <div class="col-md-6 mb-3">
                             <label class="form-label fw-bold">优先级</label>
@@ -194,15 +122,156 @@
         </div>
     </div>
 </div>
+
+<!-- 编辑计划弹窗 -->
+<div class="modal fade" id="editPlanModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="editPlanForm">
+                <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> 编辑学习计划</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">计划标题 <span class="text-danger">*</span></label>
+                        <input type="text" name="title" id="edit-title" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">计划描述</label>
+                        <textarea name="description" id="edit-desc" class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">目标学科</label>
+                            <select name="xueke" id="edit-xueke" class="form-select" onchange="loadKnowledgePoints(this.value, 'kp-list-edit')">
+                                <option value="">不限</option>
+                                {% for s in subjects %}
+                                <option value="{{ s }}">{{ s }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">目标日期</label>
+                            <input type="date" name="target_date" id="edit-date" class="form-control">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">知识点</label>
+                            <input type="text" name="zhishidian" id="edit-kp" class="form-control" list="kp-list-edit" autocomplete="off">
+                            <datalist id="kp-list-edit">
+                                {% for kp in knowledge_points %}
+                                <option value="{{ kp['zhishidian'] }}">
+                                {% endfor %}
+                            </datalist>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">优先级</label>
+                            <select name="priority" id="edit-priority" class="form-select">
+                                <option value="1">🟢 低</option>
+                                <option value="2">🟡 中低</option>
+                                <option value="3">🟡 中</option>
+                                <option value="4">🔴 高</option>
+                                <option value="5">🔴 紧急</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存修改</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
+var currentMonth = '{{ month }}';
+
 function reviewPlan(planId) {
-    if (!confirm('将把该计划关联的知识点错题加入今日复习，确定吗？')) return;
-    fetch('/api/study-plans/' + planId + '/review', { method: 'POST' })
-        .then(r => r.json())
-        .then(d => { if (d.success) { alert(d.message); location.href = '/review'; } else { alert(d.message); } });
+    if (!confirm('将把该计划关联的错题加入今日复习，确定吗？')) return;
+    var csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    fetch('/api/study-plans/' + planId + '/review', {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': csrf }
+    }).then(r => r.json()).then(d => {
+        if (d.success) { alert(d.message); location.href = '/review'; }
+        else { alert(d.message); }
+    });
 }
+
+function editPlan(id, title, desc, xueke, kp, date, priority) {
+    document.getElementById('editPlanForm').action = '/study-plans/' + id + '/update';
+    document.getElementById('edit-title').value = title;
+    document.getElementById('edit-desc').value = desc;
+    document.getElementById('edit-xueke').value = xueke;
+    document.getElementById('edit-kp').value = kp;
+    document.getElementById('edit-date').value = date;
+    document.getElementById('edit-priority').value = priority;
+    new bootstrap.Modal(document.getElementById('editPlanModal')).show();
+}
+
+function quickAddPlan(dateStr) {
+    document.getElementById('plan-target-date').value = dateStr;
+    document.querySelector('#addPlanModal input[name="title"]').focus();
+    new bootstrap.Modal(document.getElementById('addPlanModal')).show();
+}
+
+function loadKnowledgePoints(xueke, listId) {
+    var url = '/api/knowledge-points/by-subject';
+    if (xueke) url += '?xueke=' + encodeURIComponent(xueke);
+    fetch(url).then(r => r.json()).then(data => {
+        var list = document.getElementById(listId);
+        list.innerHTML = '';
+        data.forEach(function(kp) {
+            var opt = document.createElement('option');
+            opt.value = kp;
+            list.appendChild(opt);
+        });
+    });
+}
+
+// AJAX 局部刷新计划列表
+function loadPlans(page) {
+    page = page || 1;
+    var form = document.getElementById('plan-filter-form') || document.querySelector('#plans-container form');
+    var params = new URLSearchParams();
+    params.set('month', currentMonth);
+    params.set('page', page);
+    if (form) {
+        var s = form.querySelector('[name="status"]'); if (s && s.value) params.set('status', s.value);
+        var x = form.querySelector('[name="xueke"]'); if (x && x.value) params.set('xueke', x.value);
+        var p = form.querySelector('[name="priority"]'); if (p && p.value) params.set('priority', p.value);
+    }
+    var container = document.getElementById('plans-container');
+    container.style.opacity = '0.5';
+    fetch('/api/study-plans/list?' + params.toString())
+        .then(r => r.text())
+        .then(html => {
+            container.innerHTML = html;
+            container.style.opacity = '1';
+            initTooltips();
+        });
+}
+
+function resetFilters() {
+    loadPlans(1);
+}
+
+// 日历 Tooltip（先销毁已存在的实例，避免 AJAX 刷新后重复初始化告警）
+function initTooltips() {
+    var list = [].slice.call(document.querySelectorAll('.more-plans'));
+    list.map(function(el) {
+        var t = bootstrap.Tooltip.getInstance(el);
+        if (t) t.dispose();
+        return new bootstrap.Tooltip(el, { placement: 'top', delay: { show: 200, hide: 100 } });
+    });
+}
+document.addEventListener('DOMContentLoaded', initTooltips);
 </script>
 {% endblock %}

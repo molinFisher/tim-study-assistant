@@ -1,0 +1,146 @@
+<!-- 筛选栏 -->
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <form id="plan-filter-form" class="d-flex flex-wrap gap-2 align-items-end" onsubmit="return false">
+        <input type="hidden" name="month" value="{{ month }}">
+        <select name="status" class="form-select form-select-sm" style="width:120px" onchange="loadPlans()">
+            <option value="">全部状态</option>
+            <option value="pending" {% if status_filter=='pending' %}selected{% endif %}>待开始</option>
+            <option value="in_progress" {% if status_filter=='in_progress' %}selected{% endif %}>进行中</option>
+            <option value="completed" {% if status_filter=='completed' %}selected{% endif %}>已完成</option>
+            <option value="paused" {% if status_filter=='paused' %}selected{% endif %}>已暂停</option>
+        </select>
+        <select name="xueke" class="form-select form-select-sm" style="width:110px" onchange="loadPlans()">
+            <option value="">全部学科</option>
+            {% for s in subjects %}
+            <option value="{{ s }}" {% if xueke_filter==s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+        <select name="priority" class="form-select form-select-sm" style="width:110px" onchange="loadPlans()">
+            <option value="">全部优先级</option>
+            <option value="3" {% if priority_filter==3 %}selected{% endif %}>中及以上</option>
+            <option value="4" {% if priority_filter==4 %}selected{% endif %}>高及以上</option>
+            <option value="5" {% if priority_filter==5 %}selected{% endif %}>仅紧急</option>
+        </select>
+        {% if status_filter or xueke_filter or priority_filter %}
+        <a href="javascript:resetFilters()" class="btn btn-outline-secondary btn-sm">重置</a>
+        {% endif %}
+    </form>
+    <small class="text-muted">共 {{ total }} 个计划</small>
+</div>
+
+<!-- 计划卡片 -->
+<div class="row g-3">
+    {% if plans %}
+    {% for plan in plans %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card h-100 shadow-sm plan-card" id="plan-{{ plan['id'] }}">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h6 class="fw-bold mb-0">{{ plan['title'] }}</h6>
+                    <div class="d-flex gap-1">
+                        <span class="badge bg-{{ 'success' if plan['status'] == 'completed' else 'warning' if plan['status'] in ('in_progress','paused') else 'secondary' if plan['status'] == 'cancelled' else 'info' }}">
+                            {{ {'pending': '待开始', 'in_progress': '进行中', 'completed': '已完成', 'cancelled': '已取消', 'paused': '已暂停'}.get(plan['status'], plan['status']) }}
+                        </span>
+                        <button class="btn btn-outline-secondary btn-sm py-0 px-1" title="编辑计划"
+                                onclick="editPlan({{ plan['id'] }}, '{{ plan['title']|e }}', '{{ (plan['description'] or '')|e }}', '{{ plan['xueke'] }}', '{{ plan['zhishidian'] }}', '{{ plan['target_date'] or '' }}', {{ plan['priority'] }})">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                    </div>
+                </div>
+                {% if plan['description'] %}
+                <p class="text-muted small mb-2">{{ plan['description'][:100] }}</p>
+                {% endif %}
+                <div class="d-flex flex-wrap gap-1 mb-2">
+                    {% if plan['xueke'] %}
+                    <span class="badge bg-primary">{{ plan['xueke'] }}</span>
+                    {% endif %}
+                    {% if plan['zhishidian'] %}
+                    <span class="knowledge-badge">{{ plan['zhishidian'] }}</span>
+                    {% endif %}
+                    <span class="badge bg-light text-dark">
+                        {% if plan['priority'] >= 4 %}🔴{% elif plan['priority'] >= 2 %}🟡{% else %}🟢{% endif %}
+                        优先级 {{ plan['priority'] }}
+                    </span>
+                </div>
+                {% if plan['target_date'] %}
+                <small class="text-muted"><i class="bi bi-calendar"></i> 目标：{{ plan['target_date'] }}</small>
+                {% endif %}
+                {% set mc = plan_mistake_counts.get(plan['id'], 0) %}
+                {% set md = plan_mastered_counts.get(plan['id'], 0) %}
+                {% if mc > 0 %}
+                <div class="mt-1">
+                    <div class="d-flex justify-content-between small text-muted">
+                        <span>📚 {{ mc }} 道关联错题</span><span>{{ md }}/{{ mc }} 已掌握</span>
+                    </div>
+                    <div class="progress" style="height:6px;border-radius:3px;">
+                        <div class="progress-bar bg-success" style="width:{{ (md/mc*100)|int }}%"></div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="mt-1"><small class="text-muted"><i class="bi bi-exclamation-circle"></i> 暂无关联错题</small></div>
+                {% endif %}
+                <div class="mt-2 d-flex flex-wrap gap-1">
+                    {% if plan['status'] == 'pending' %}
+                    <form method="POST" action="{{ url_for('update_study_plan', plan_id=plan['id']) }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                        <input type="hidden" name="status" value="in_progress">
+                        <button class="btn btn-warning btn-sm"><i class="bi bi-play-fill"></i> 开始</button>
+                    </form>
+                    {% elif plan['status'] == 'in_progress' %}
+                    <form method="POST" action="{{ url_for('update_study_plan', plan_id=plan['id']) }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                        <input type="hidden" name="status" value="completed">
+                        <button class="btn btn-success btn-sm"><i class="bi bi-check-lg"></i> 完成</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('pause_study_plan', plan_id=plan['id']) }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                        <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-pause-fill"></i> 暂停</button>
+                    </form>
+                    {% elif plan['status'] == 'paused' %}
+                    <form method="POST" action="{{ url_for('resume_study_plan', plan_id=plan['id']) }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                        <button class="btn btn-warning btn-sm"><i class="bi bi-play-fill"></i> 恢复</button>
+                    </form>
+                    {% endif %}
+                    <a href="{{ url_for('plan_mistakes', plan_id=plan['id']) }}" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-journal-plus"></i> 管理错题
+                    </a>
+                    {% if mc > 0 %}
+                    <button class="btn btn-outline-info btn-sm" onclick="reviewPlan({{ plan['id'] }})">
+                        <i class="bi bi-arrow-repeat"></i> 开始复习
+                    </button>
+                    {% endif %}
+                    <form method="POST" action="{{ url_for('delete_study_plan', plan_id=plan['id']) }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+                        <button class="btn btn-outline-danger btn-sm" onclick="return confirm('确定删除「{{ plan['title'] }}」吗？')">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="col-12">
+        <div class="text-center py-5">
+            <i class="bi bi-calendar-plus" style="font-size: 4rem; color: #ccc;"></i>
+            <h4 class="text-muted mt-3">还没有学习计划</h4>
+            <p class="text-muted">制定你的学习计划，让复习更有条理！</p>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addPlanModal">
+                <i class="bi bi-plus-lg"></i> 创建第一个计划
+            </button>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if total_pages > 1 %}
+<nav class="mt-4"><ul class="pagination pagination-sm justify-content-center">
+    {% for p in range(1, total_pages + 1) %}
+    <li class="page-item {% if p == page %}active{% endif %}">
+        <a class="page-link" href="javascript:loadPlans({{ p }})">{{ p }}</a>
+    </li>
+    {% endfor %}
+</ul></nav>
+{% endif %}

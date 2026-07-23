@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block title %}管理错题 - {{ plan['title'] }} - Tim 学习助手{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <a href="{{ url_for('study_plans') }}" class="btn btn-outline-secondary btn-sm me-2">
+            <i class="bi bi-arrow-left"></i> 返回计划
+        </a>
+        <h3 class="d-inline align-middle mb-0">{{ plan['title'] }} - 错题管理</h3>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-success btn-sm" onclick="autoMatch()" id="auto-btn">
+            <i class="bi bi-magic"></i> 自动匹配知识点错题
+        </button>
+    </div>
+</div>
+
+<!-- 计划信息卡片 -->
+<div class="card mb-3 border-0 shadow-sm bg-light">
+    <div class="card-body py-2">
+        <div class="d-flex flex-wrap gap-2 align-items-center small">
+            {% if plan['xueke'] %}<span class="badge bg-primary">{{ plan['xueke'] }}</span>{% endif %}
+            {% if plan['zhishidian'] %}<span class="knowledge-badge">{{ plan['zhishidian'] }}</span>{% endif %}
+            {% if plan['target_date'] %}<span class="text-muted">📅 {{ plan['target_date'] }}</span>{% endif %}
+            <span class="text-muted">已关联：<strong id="linked-count">{{ linked|length }}</strong> 道错题</span>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <!-- 左侧：已关联错题 -->
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-link-45deg"></i> 已关联错题</span>
+                <div>
+                    <button class="btn btn-outline-light btn-sm" onclick="toggleAll('linked', true)" id="select-all-linked">全选</button>
+                    <button class="btn btn-outline-light btn-sm" onclick="removeSelected()" id="remove-btn" disabled>
+                        <i class="bi bi-x-circle"></i> 移除选中
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                {% if linked %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:40px"><input type="checkbox" id="linked-all" onchange="toggleGroup('linked', this)"></th>
+                                <th>ID</th>
+                                <th>学科</th>
+                                <th>题目</th>
+                                <th>掌握</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for q in linked %}
+                            <tr class="linked-row">
+                                <td><input type="checkbox" class="linked-cb" value="{{ q['id'] }}"></td>
+                                <td><a href="{{ url_for('question_detail', question_id=q['id']) }}">{{ q['id'] }}</a></td>
+                                <td><span class="badge bg-primary">{{ q['xueke'] }}</span></td>
+                                <td>
+                                    <span class="text-truncate d-inline-block" style="max-width:280px;">
+                                        {{ q.get('timu_plain', q['timu'][:50]) }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if q['status'] == 'mastered' %}
+                                    <span class="badge bg-success">已掌握</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ q['status'] }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-inbox" style="font-size:2rem"></i>
+                    <p class="mt-2 mb-0">暂无关联错题，请从右侧推荐列表添加，或点击「自动匹配」</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧：推荐错题（同知识点未关联） -->
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-lightbulb"></i> 推荐添加
+                {% if plan['zhishidian'] %}(同知识点「{{ plan['zhishidian'] }}」)
+                {% elif plan['xueke'] %}({{ plan['xueke'] }}学科)
+                {% else %}(全部)
+                {% endif %}
+                </span>
+                <button class="btn btn-outline-light btn-sm" onclick="addSelected()" id="add-btn" disabled>
+                    <i class="bi bi-plus-lg"></i> 添加选中
+                </button>
+            </div>
+            <div class="card-body p-0">
+                {% if suggested %}
+                <div class="p-2 border-bottom">
+                    <input type="text" class="form-control form-control-sm" id="search-suggested"
+                           placeholder="搜索错题..." oninput="filterSuggested()">
+                </div>
+                <div class="table-responsive" style="max-height:500px;overflow-y:auto;">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th style="width:40px"><input type="checkbox" id="suggested-all" onchange="toggleGroup('suggested', this)"></th>
+                                <th>ID</th>
+                                <th>学科</th>
+                                <th>题目</th>
+                            </tr>
+                        </thead>
+                        <tbody id="suggested-tbody">
+                            {% for q in suggested %}
+                            <tr class="suggested-row" data-keywords="{{ q['xueke'] }} {{ q.get('timu_plain', q['timu'][:50]) }} {{ q.get('zhishidian','') }}">
+                                <td><input type="checkbox" class="suggested-cb" value="{{ q['id'] }}"></td>
+                                <td><a href="{{ url_for('question_detail', question_id=q['id']) }}" target="_blank">{{ q['id'] }}</a></td>
+                                <td><span class="badge bg-primary">{{ q['xueke'] }}</span></td>
+                                <td>
+                                    <span class="small d-inline-block" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                                        {{ q.get('timu_plain', q['timu'][:50]) }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    {% if plan['zhishidian'] %}
+                    <p class="mb-0">所有匹配「{{ plan['zhishidian'] }}」的错题都已关联</p>
+                    {% else %}
+                    <p class="mb-0">该计划未设置知识点，无法自动推荐</p>
+                    <p class="small">请先<a href="#" onclick="document.querySelector('.btn-outline-secondary.btn-sm').click();return false">编辑计划</a>添加知识点</p>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+var csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+var planId = {{ plan['id'] }};
+
+function toggleGroup(group, master) {
+    document.querySelectorAll('.' + group + '-cb').forEach(cb => { cb.checked = master.checked; });
+    updateButtons();
+}
+
+function toggleAll(group, state) {
+    document.querySelectorAll('.' + group + '-cb').forEach(cb => { cb.checked = state; });
+    updateButtons();
+}
+
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('linked-cb') || e.target.classList.contains('suggested-cb')) {
+        updateButtons();
+    }
+});
+
+function updateButtons() {
+    var linkedChecked = document.querySelectorAll('.linked-cb:checked').length;
+    var suggestedChecked = document.querySelectorAll('.suggested-cb:checked').length;
+    document.getElementById('remove-btn').disabled = linkedChecked === 0;
+    document.getElementById('add-btn').disabled = suggestedChecked === 0;
+    document.getElementById('linked-all').checked =
+        document.querySelectorAll('.linked-cb').length > 0 &&
+        document.querySelectorAll('.linked-cb:checked').length === document.querySelectorAll('.linked-cb').length;
+}
+
+function getCheckedIds(group) {
+    return Array.from(document.querySelectorAll('.' + group + '-cb:checked')).map(cb => parseInt(cb.value));
+}
+
+function addSelected() {
+    var ids = getCheckedIds('suggested');
+    if (!ids.length) return;
+    fetch('/api/study-plans/' + planId + '/mistakes/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ ids: ids })
+    }).then(r => r.json()).then(d => {
+        alert(d.message);
+        location.reload();
+    });
+}
+
+function removeSelected() {
+    var ids = getCheckedIds('linked');
+    if (!ids.length) return;
+    if (!confirm('确定从计划中移除 ' + ids.length + ' 道错题吗？（不会删除错题本身）')) return;
+    fetch('/api/study-plans/' + planId + '/mistakes/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ ids: ids })
+    }).then(r => r.json()).then(d => {
+        alert(d.message);
+        location.reload();
+    });
+}
+
+function autoMatch() {
+    var btn = document.getElementById('auto-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 匹配中...';
+    fetch('/api/study-plans/' + planId + '/mistakes/auto', {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': csrf }
+    }).then(r => r.json()).then(d => {
+        alert(d.message);
+        location.reload();
+    }).catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-magic"></i> 自动匹配知识点错题';
+    });
+}
+
+function filterSuggested() {
+    var kw = document.getElementById('search-suggested').value.toLowerCase();
+    document.querySelectorAll('.suggested-row').forEach(row => {
+        row.style.display = kw === '' || row.dataset.keywords.toLowerCase().includes(kw) ? '' : 'none';
+    });
+}
+</script>
+{% endblock %}

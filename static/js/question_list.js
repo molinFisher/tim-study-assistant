@@ -10,6 +10,7 @@
     const batchDeleteBtn = document.getElementById('batch-delete-btn');
     const batchAction = document.getElementById('batch-action');
     const totalCount = document.getElementById('total-count');
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
     const rowChecks = document.querySelectorAll('.row-select');
     if (rowChecks.length > 0 && selectAll) {
@@ -66,7 +67,7 @@
             this.disabled = true;
             fetch('/api/questions/batch-update', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
                 body: JSON.stringify({ ids: ids, action: action, value: value })
             })
             .then(res => res.json())
@@ -98,7 +99,7 @@
 
         fetch('/api/questions/batch-delete', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
             body: JSON.stringify({ ids: ids })
         })
         .then(res => res.json())

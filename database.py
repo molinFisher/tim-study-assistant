@@ -128,6 +128,19 @@ def init_db():
         )
     ''')
 
+    # ========== 8. 计划-错题关联表 ==========
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS plan_mistakes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id INTEGER NOT NULL,
+            mistake_id INTEGER NOT NULL,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (plan_id) REFERENCES study_plans(id),
+            FOREIGN KEY (mistake_id) REFERENCES mistake_records(id),
+            UNIQUE(plan_id, mistake_id)
+        )
+    ''')
+
     # ========== 创建索引 ==========
     indexes = [
         'CREATE INDEX IF NOT EXISTS idx_mr_uuid ON mistake_records(uuid)',
@@ -140,6 +153,8 @@ def init_db():
         'CREATE INDEX IF NOT EXISTS idx_sp_uuid ON study_plans(uuid)',
         'CREATE INDEX IF NOT EXISTS idx_rl_mistake_id ON review_logs(mistake_id)',
         'CREATE INDEX IF NOT EXISTS idx_rl_date ON review_logs(review_date)',
+        'CREATE INDEX IF NOT EXISTS idx_pm_plan_id ON plan_mistakes(plan_id)',
+        'CREATE INDEX IF NOT EXISTS idx_pm_mistake_id ON plan_mistakes(mistake_id)',
     ]
     for idx_sql in indexes:
         cursor.execute(idx_sql)
