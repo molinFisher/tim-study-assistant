@@ -108,7 +108,7 @@ def ensure_user_config(uuid):
     """确保用户配置存在，不存在则创建"""
     from database import query_db, execute_db
     existing = query_db(
-        'SELECT id FROM user_config WHERE 1=1', one=True
+        'SELECT id FROM user_config WHERE uuid=?', (uuid,), one=True
     )
     if not existing:
         execute_db(
@@ -121,7 +121,7 @@ def get_user_config(uuid):
     """获取用户配置"""
     from database import query_db
     config = query_db(
-        'SELECT * FROM user_config WHERE 1=1', one=True
+        'SELECT * FROM user_config WHERE uuid=?', (uuid,), one=True
     )
     return dict(config) if config else {
         'review_algorithm': Config.DEFAULT_REVIEW_ALGORITHM,

@@ -69,11 +69,16 @@
 
 {% block extra_scripts %}
 <script>
-function loadHistory(page) {
+function loadHistory(page, perPage) {
     page = page || 1;
+    if (!perPage) {
+        var sel = document.querySelector('.per-page-select');
+        perPage = sel ? sel.value : 20;
+    }
     var form = document.getElementById('history-filter-form');
     var params = new URLSearchParams();
     params.set('page', page);
+    params.set('per_page', perPage);
     if (form) {
         var s = form.querySelector('[name="status"]'); if (s && s.value) params.set('status', s.value);
         var x = form.querySelector('[name="xueke"]'); if (x && x.value) params.set('xueke', x.value);

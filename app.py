@@ -14,6 +14,7 @@ from flask import g
 
 from config import Config
 from database import init_db, query_db, execute_db, rows_to_dicts
+from pagination import paginate, pagination_meta
 from utils import (
     get_or_create_uuid, set_uuid_cookie, ensure_user_config, get_user_config,
     save_image, get_image_data, delete_image_files, allowed_file,
@@ -43,6 +44,23 @@ app.permanent_session_lifetime = __import__('datetime').timedelta(hours=24)
 # 确保上传目录存在
 os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
 
+# ============================================================
+#  代码导航索引（按功能模块分块，详见 blueprints/__init__.py）
+#  ============================================================
+#  行 47-72    : 安全加固（CSRF / 速率限制）
+#  行 74-114   : 认证（登录/登出）
+#  行 116-175  : 首页仪表盘
+#  行 177-330  : 错题管理（列表/新增/详情/编辑/删除/回收站/粘贴导入）
+#  行 332-470  : 文档导入 / OCR
+#  行 472-1040 : 批量操作 / 复习 / 学习计划
+#  行 1042-1420: 知识点管理（列表/树/新增/重命名/合并/预览）
+#  行 1422-1700: 知识地图 / 学习计划详情
+#  行 1702-1900: 复习历史 / 复习配置
+#  行 1902-2200: 统计分析 / 数据导出 / 备份
+#  行 2202-2500: 设置 / API Token
+#  行 2502-2700: 外部 API v1 / 启动入口
+# ============================================================
+
 # ==================== 安全加固 ====================
 
 # 登录速率限制 {ip: (fail_count, lock_until)}
@@ -63,7 +81,8 @@ def csrf_check():
     if request.method in ('GET', 'HEAD', 'OPTIONS'):
         return
     if request.endpoint in ('login', 'static') or \
-       request.path.startswith('/api/v1/'):
+       request.path.startswith('/api/v1/') or \
+       request.path.startswith('/api/knowledge-points/merge/preview'):
         return
     token = request.headers.get('X-CSRF-Token') or request.form.get('csrf_token')
     if not token or token != session.get('csrf_token'):
@@ -178,40 +197,35 @@ def index():
 
     # 统计卡片数据
     total_questions = query_db(
-        'SELECT COUNT(*) as cnt FROM mistake_records WHERE 1=1 AND status != ?',
-        ('archived',), one=True
-    )['cnt']
-
-    active_questions = query_db(
-        'SELECT COUNT(*) as cnt FROM mistake_records WHERE 1=1 AND status = ?',
-        ('active',), one=True
+        "SELECT COUNT(*) as cnt FROM mistake_records WHERE status != 'deleted'",
+        (), one=True
     )['cnt']
 
     mastered_questions = query_db(
-        'SELECT COUNT(*) as cnt FROM mistake_records WHERE 1=1 AND status = ?',
-        ('mastered',), one=True
+        "SELECT COUNT(*) as cnt FROM mistake_records WHERE status = 'mastered'",
+        (), one=True
     )['cnt']
 
     today_str = date.today().isoformat()
     due_today = query_db(
         '''SELECT COUNT(*) as cnt FROM mistake_records
-           WHERE 1=1 AND status = 'active'
+           WHERE status = 'active'
            AND next_review_at IS NOT NULL
            AND date(next_review_at) <= ?''',
         (today_str,), one=True
     )['cnt']
 
     # 本周新增
-    week_start = date.today().strftime('%Y-%m-%d 00:00:00',)
+    week_start = date.today().strftime('%Y-%m-%d 00:00:00')
     week_new = query_db(
-        'SELECT COUNT(*) as cnt FROM mistake_records WHERE 1=1 AND bstudio_create_time >= ?',
+        "SELECT COUNT(*) as cnt FROM mistake_records WHERE status != 'deleted' AND bstudio_create_time >= ?",
         (week_start,), one=True
     )['cnt']
 
     # 最近错题
     recent_questions = query_db(
         '''SELECT * FROM mistake_records
-           WHERE 1=1 AND status = 'active'
+           WHERE status = 'active'
            ORDER BY bstudio_create_time DESC LIMIT 5''',
         ()
     )
@@ -219,7 +233,7 @@ def index():
     # 今日待复习错题
     due_reviews = query_db(
         '''SELECT * FROM mistake_records
-           WHERE 1=1 AND status = 'active'
+           WHERE status = 'active'
            AND next_review_at IS NOT NULL
            AND date(next_review_at) <= ?
            ORDER BY next_review_at ASC LIMIT 5''',
@@ -233,19 +247,6 @@ def index():
         q['timu_plain'] = strip_latex(q['timu'])
     for q in due_reviews:
         q['timu_plain'] = strip_latex(q['timu'])
-
-    # 学科分布饼图
-    xueke_stats = query_db(
-        '''SELECT xueke, COUNT(*) as cnt FROM mistake_records
-           WHERE 1=1 AND status != 'archived'
-           GROUP BY xueke ORDER BY cnt DESC''',
-        ()
-    )
-    pie_chart = None
-    if xueke_stats:
-        labels = [r['xueke'] for r in xueke_stats]
-        values = [r['cnt'] for r in xueke_stats]
-        pie_chart = generate_pie_chart(labels, values, '学科错题分布')
 
     # 复习连击：连续几天有复习记录
     streak = 0
@@ -266,13 +267,11 @@ def index():
 
     resp = make_response(render_template('index.html',
         total_questions=total_questions,
-        active_questions=active_questions,
         mastered_questions=mastered_questions,
         due_today=due_today,
         week_new=week_new,
         recent_questions=recent_questions,
         due_reviews=due_reviews,
-        pie_chart=pie_chart,
         streak=streak,
         today_minutes=today_minutes,
         active_plans=active_plans))
@@ -332,8 +331,8 @@ def paste_import():
 @login_required
 def question_list():
 
-    # 查询参数
-    page = request.args.get('page', 1, type=int)
+    # 查询参��
+    page, per_page, offset = paginate(request, Config.PAGE_SIZE)
     xueke_filter = request.args.get('xueke', '')
     zhishidian_filter = request.args.get('zhishidian', '')
     status_filter = request.args.get('status', '')
@@ -341,21 +340,27 @@ def question_list():
     date_from = request.args.get('date_from', '')
     date_to = request.args.get('date_to', '')
 
-    # 构建查询（不过滤 uuid，展示全部错题）
+    # 构建查询（不过滤 uuid，展示全部错题；但默认隐藏已软删除的错题，
+    # 软删除的进入回收站 /questions/deleted，避免「删除后刷新又出现」）。
     where_clauses = ['1=1']
     params = []
 
     if xueke_filter:
-        where_clauses.append('xueke = ?',)
+        where_clauses.append('xueke = ?')
         params.append(xueke_filter)
     if zhishidian_filter:
-        where_clauses.append('zhishidian = ?',)
+        where_clauses.append('(zhishidian LIKE ? OR xueke = ?)')
+        params.append('%' + zhishidian_filter + '%')
         params.append(zhishidian_filter)
     if status_filter:
-        where_clauses.append('status = ?',)
+        # 显式按状态筛选（含 status=deleted 时用户主动查看回收站内容）
+        where_clauses.append('status = ?')
         params.append(status_filter)
+    else:
+        # 默认排除已软删除的错题
+        where_clauses.append("status != 'deleted'")
     if keyword:
-        where_clauses.append('(timu LIKE ? OR zhishidian LIKE ? OR cuowufenxi LIKE ?)',)
+        where_clauses.append('(timu LIKE ? OR zhishidian LIKE ? OR cuowufenxi LIKE ?)')
         kw = '%' + keyword + '%'
         params.extend([kw, kw, kw])
     if date_from:
@@ -374,15 +379,14 @@ def question_list():
     )['cnt']
 
     # 分页
-    offset = (page - 1) * Config.PAGE_SIZE
     questions = query_db(
         f'''SELECT * FROM mistake_records WHERE {where_sql}
             ORDER BY bstudio_create_time DESC
             LIMIT ? OFFSET ?''',
-        params + [Config.PAGE_SIZE, offset]
+        params + [per_page, offset]
     )
 
-    total_pages = max(1, (total + Config.PAGE_SIZE - 1) // Config.PAGE_SIZE)
+    total_pages = max(1, (total + per_page - 1) // per_page)
 
     # 为每个问题生成纯文本摘要（去掉 LaTeX 标记）
     questions = rows_to_dicts(questions)
@@ -406,6 +410,7 @@ def question_list():
         knowledge_points=knowledge_points,
         subjects=Config.get_subjects(),
         status_options=Config.STATUS_OPTIONS,
+        per_page=per_page,
         today_str=date.today().isoformat(),
     ))
     return set_uuid_cookie(resp, g.user_uuid)
@@ -732,9 +737,7 @@ def batch_update_questions():
 @app.route('/questions/deleted',)
 @login_required
 def question_deleted():
-    page = request.args.get('page', 1, type=int)
-    per_page = 20
-    offset = (page - 1) * per_page
+    page, per_page, offset = paginate(request, 20)
 
     # 总数
     total = query_db(
@@ -751,35 +754,66 @@ def question_deleted():
     rows = rows_to_dicts(rows)
     for r in rows:
         r['timu_plain'] = strip_latex(r['timu'])
-    resp = make_response(render_template('question_deleted.html', rows=rows, page=page, total_pages=total_pages, total=total))
+    resp = make_response(render_template('question_deleted.html', rows=rows, page=page, per_page=per_page, total_pages=total_pages, total=total))
     return set_uuid_cookie(resp, get_or_create_uuid())
 
 
 @app.route('/api/questions/restore', methods=['POST'])
 @login_required
 def batch_restore_questions():
+    """批量恢复错题（回收站 -> 活跃）。
+
+    同时兼容两种提交方式：
+      · 批量工具条按钮：fetch 发送 JSON {ids:[...]}
+      · 每行的「恢复」表单：传统 form 提交 ids 表单字段
+    """
     data = request.get_json(silent=True) or {}
-    ids = data.get('ids', [])
+    ids = data.get('ids')
+    if ids is None:
+        # 兼容回收站每行的传统 form 提交（name=ids 表单字段）
+        ids = request.form.getlist('ids')
     if not ids:
         return jsonify({'success': False, 'message': '未选择'}), 400
+    restored = 0
     for qid in ids:
-        execute_db("UPDATE mistake_records SET status='active', updated_at=CURRENT_TIMESTAMP WHERE id=?", (int(qid),))
-    return jsonify({'success': True, 'restored': len(ids)})
+        try:
+            execute_db("UPDATE mistake_records SET status='active', updated_at=CURRENT_TIMESTAMP WHERE id=?", (int(qid),))
+            restored += 1
+        except (ValueError, TypeError):
+            continue
+    return jsonify({'success': True, 'restored': restored})
 
 
 @app.route('/api/questions/purge', methods=['POST'])
 @login_required
 def batch_purge_questions():
-    """彻底物理删除已删除的错题"""
+    """彻底物理删除已删除的错题（含其全部从属数据）。
+
+    关键修复：plan_mistakes.mistake_id 外键**没有** ON DELETE CASCADE，
+    若先删主表 mistake_records 会触发外键约束冲突导致整批 purge 失败回滚。
+    因此必须先删除所有从属关联（plan_mistakes / mistake_knowledge /
+    mistake_images / review_logs），再删主表。
+    """
     data = request.get_json(silent=True) or {}
-    ids = data.get('ids', [])
+    ids = data.get('ids')
+    if ids is None:
+        ids = request.form.getlist('ids')
     if not ids:
         return jsonify({'success': False, 'message': '未选择'}), 400
+    purged = 0
     for qid in ids:
-        execute_db('DELETE FROM mistake_images WHERE mistake_id=?', (int(qid),))
-        execute_db('DELETE FROM review_logs WHERE mistake_id=?', (int(qid),))
-        execute_db('DELETE FROM mistake_records WHERE id=?', (int(qid),))
-    return jsonify({'success': True, 'purged': len(ids)})
+        try:
+            qid = int(qid)
+        except (ValueError, TypeError):
+            continue
+        # 先删从属关联（顺序无关，但务必在删主表之前完成，避免 FK 约束冲突）
+        execute_db('DELETE FROM plan_mistakes WHERE mistake_id=?', (qid,))
+        execute_db('DELETE FROM mistake_knowledge WHERE mistake_id=?', (qid,))
+        execute_db('DELETE FROM mistake_images WHERE mistake_id=?', (qid,))
+        execute_db('DELETE FROM review_logs WHERE mistake_id=?', (qid,))
+        execute_db('DELETE FROM mistake_records WHERE id=?', (qid,))
+        purged += 1
+    return jsonify({'success': True, 'purged': purged})
 
 
 @app.route('/questions/<int:question_id>/toggle-status', methods=['POST'])
@@ -1213,89 +1247,58 @@ def api_doc_status(task_id):
 
 # ==================== 知识点管理 ====================
 
-@app.route('/knowledge-points',)
+@app.route('/knowledge-points')
 @login_required
 def knowledge_points():
+    """历史入口：重定向到统一「知识树管理」页面（保留旧书签/外链不破）。"""
+    return redirect('/knowledge-tree', 302)
 
-    # 筛选参数
-    xueke_filter = request.args.get('xueke', '')
-    days_filter = request.args.get('days', '', type=int)
-    status_filter = request.args.get('status', '')
-    sort = request.args.get('sort', 'total')
-    page = request.args.get('page', 1, type=int) or 1
-    per_page = request.args.get('per_page', 20, type=int) or 20
-    per_page = max(5, min(per_page, 100))
 
-    where_clauses = ["zhishidian != ''"]
-    params = []
-
-    if xueke_filter:
-        where_clauses.append('xueke = ?')
-        params.append(xueke_filter)
-    if days_filter and days_filter > 0:
-        where_clauses.append("bstudio_create_time >= date('now', ? || ' days')")
-        params.append(str(-days_filter))
-    if status_filter:
-        where_clauses.append('status = ?')
-        params.append(status_filter)
-
-    where_sql = ' AND '.join(where_clauses)
-
-    order_map = {
-        'total': 'total DESC',
-        'rate_asc': 'CAST(mastered_count AS REAL) / total ASC',
-        'rate_desc': 'CAST(mastered_count AS REAL) / total DESC',
-        'name': 'zhishidian ASC',
-    }
-    order_sql = order_map.get(sort, 'total DESC')
-
-    # 总分页数（按 zhishidian 分组后的行数）
-    total_count = query_db(
-        f"SELECT COUNT(*) AS c FROM (SELECT 1 FROM mistake_records WHERE {where_sql} GROUP BY zhishidian)",
-        params, one=True)['c']
-    total_pages = max(1, (total_count + per_page - 1) // per_page)
-    page = max(1, min(page, total_pages))
-    offset = (page - 1) * per_page
-
-    kps = query_db(
-        f'''SELECT zhishidian,
-                  COUNT(*) as total,
-                  SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) as active_count,
-                  SUM(CASE WHEN status='mastered' THEN 1 ELSE 0 END) as mastered_count
-           FROM mistake_records
-           WHERE {where_sql}
-           GROUP BY zhishidian
-           ORDER BY {order_sql}
-           LIMIT ? OFFSET ?''',
-        params + [per_page, offset]
-    )
-
-    resp = make_response(render_template('knowledge_points.html',
-        kps=kps,
-        xueke_filter=xueke_filter,
-        days_filter=days_filter or '',
-        status_filter=status_filter,
-        sort=sort,
-        page=page,
-        per_page=per_page,
-        total_count=total_count,
-        total_pages=total_pages,
-        subjects=Config.get_subjects(),
-        status_options=Config.STATUS_OPTIONS))
+@app.route('/knowledge-tree')
+@login_required
+def knowledge_tree():
+    """知识树管理（统一页面）：取代「知识点管理」+「思维导图」。
+    以规范化 knowledge_points 树为唯一数据源，左树 + 中详情统计 + 导图视图切换。
+    """
+    resp = make_response(render_template('knowledge_tree.html',
+        subjects=Config.get_subjects()))
     return set_uuid_cookie(resp, g.user_uuid)
 
 
 @app.route('/api/knowledge-points/add', methods=['POST'])
 @login_required
 def api_add_knowledge_point():
-    """手动添加知识点（写入 base_data + 可选创建一条占位错题记录）"""
+    """手动添加知识点：在知识树中创建一个真实节点（统一「新增」入口）。
+
+    与知识树右键「加节点」同构——复用 ensure_subject / ensure_node 建立学科→(章)→知识点
+    层级，并同步 base_data 标签。名称禁止 / ； ; 分隔符；同名节点幂等复用，不产生重复。
+    """
     data = request.get_json(silent=True) or {}
-    name = (data.get('name') or '').strip()
+    name = normalize_name(data.get('name') or '')
     xueke = (data.get('xueke') or '').strip()
+    chapter = normalize_name(data.get('chapter') or '')
     if not name:
         return jsonify({'success': False, 'message': '知识点名称不能为空'})
+    if not xueke:
+        return jsonify({'success': False, 'message': '请选择所属学科'})
+    if '/；;'.__contains__(name) or '；' in name or ';' in name or '/' in name:
+        return jsonify({'success': False, 'message': '知识点名称不能包含 / 或 ; 分隔符'})
+    if chapter and ('/' in chapter or '；' in chapter or ';' in chapter):
+        return jsonify({'success': False, 'message': '章节名称不能包含 / 或 ; 分隔符'})
 
-    # 写入 base_data（如果不存在）
+    uid = g.user_uuid
+    # 1) 确保学科节点（level1）
+    subject_id = ensure_subject(xueke, uid)
+    # 2) 可选章节（level2），挂在学科下
+    parent_id = subject_id
+    level = 3
+    if chapter:
+        parent_id = ensure_node(chapter, 2, xueke, uid, subject_id)
+        level = 3
+    # 3) 创建/复用知识点节点（level3，幂等）
+    node_id = ensure_node(name, level, xueke, uid, parent_id)
+
+    # 4) 同步 base_data 标签（幂等，避免重复标签）
     existing = query_db(
         "SELECT id FROM base_data WHERE category='knowledge_point' AND name=?",
         (name,), one=True)
@@ -1304,7 +1307,14 @@ def api_add_knowledge_point():
             "INSERT INTO base_data (category, name, extra, sort_order) VALUES ('knowledge_point', ?, ?, 99)",
             (name, xueke))
 
-    return jsonify({'success': True, 'message': f'知识点「{name}」已添加'})
+    node = query_db(
+        "SELECT id, parent_id, level, name, xueke FROM knowledge_points WHERE id=?",
+        (node_id,), one=True)
+    return jsonify({
+        'success': True,
+        'message': f'知识点「{name}」已添加' + (f'（章节：{chapter}）' if chapter else f'（学科：{xueke}）'),
+        'node': dict(node),
+    })
 
 
 @app.route('/api/knowledge-points/rename', methods=['POST'])
@@ -1363,7 +1373,7 @@ def api_rename_knowledge_point():
         changed += 1
 
     # 2) 学习计划（纯字符串，token 级替换）
-    plans = query_db("SELECT id, zhishidian FROM study_plans WHERE zhishidian LIKE ?", ('%' + leaf + '%',))
+    plans = query_db("SELECT id, zhishidian FROM study_plans WHERE zhishidian LIKE ? AND status != 'deleted'", ('%' + leaf + '%',))
     for p in plans:
         new_zh, hit = _rewrite_zhishidian(p['zhishidian'])
         if hit:
@@ -1404,7 +1414,7 @@ def api_rename_impact():
         "SELECT zhishidian FROM mistake_records WHERE zhishidian LIKE ? AND status != 'deleted'",
         ('%' + leaf + '%',))
     mistake_count = sum(1 for m in affected if _would_change(m['zhishidian']))
-    plan_rows = query_db("SELECT zhishidian FROM study_plans WHERE zhishidian LIKE ?", ('%' + leaf + '%',))
+    plan_rows = query_db("SELECT zhishidian FROM study_plans WHERE zhishidian LIKE ? AND status != 'deleted'", ('%' + leaf + '%',))
     plan_count = sum(1 for p in plan_rows if _would_change(p['zhishidian']))
     collision = bool(query_db(
         "SELECT id FROM knowledge_points WHERE level=3 AND name=?", (new_name or leaf,), one=True)) if new_name else False
@@ -1412,29 +1422,176 @@ def api_rename_impact():
                     'plan_count': plan_count, 'collision': collision})
 
 
+@app.route('/api/knowledge-points/merge/preview', methods=['POST'])
+@login_required
+def api_merge_preview():
+    """合并影响预览：返回每个源知识点将被影响的错题数、学习计划数和知识树节点数。
+    不执行实际合并，仅做影响分析供用户确认。"""
+    data = request.get_json(silent=True) or {}
+    raw_sources = data.get('sources')
+    if raw_sources is None:
+        raw_sources = data.get('source')
+    if isinstance(raw_sources, str):
+        raw_sources = [raw_sources]
+    sources = [s.strip() for s in (raw_sources or []) if s.strip()]
+    target = (data.get('target') or '').strip()
+    if not sources or not target:
+        return jsonify({'success': False, 'message': '源和目标知识点不能为空'})
+
+    uid = g.user_uuid
+    preview = []
+    total_mistakes = 0
+    total_plans = 0
+    total_nodes = 0
+
+    for source in sources:
+        _, src_leaf = parse_path(source)
+        # 受影响错题数
+        mc = query_db(
+            "SELECT COUNT(*) c FROM mistake_records WHERE status != 'deleted' AND zhishidian LIKE ?",
+            ('%' + src_leaf + '%',), one=True
+        )['c']
+        # 受影响学习计划数
+        pc = query_db(
+            "SELECT COUNT(*) c FROM study_plans WHERE zhishidian LIKE ? AND status != 'deleted'",
+            ('%' + src_leaf + '%',), one=True
+        )['c']
+        # 知识树叶子节点
+        nc = query_db(
+            "SELECT COUNT(*) c FROM knowledge_points WHERE level=3 AND name=?",
+            (src_leaf,), one=True
+        )['c']
+        preview.append({
+            'source': source,
+            'leaf': src_leaf,
+            'mistake_count': mc,
+            'plan_count': pc,
+            'node_count': nc,
+        })
+        total_mistakes += mc
+        total_plans += pc
+        total_nodes += nc
+
+    return jsonify({
+        'success': True,
+        'preview': preview,
+        'total_mistakes': total_mistakes,
+        'total_plans': total_plans,
+        'total_nodes': total_nodes,
+    })
+
+
 @app.route('/api/knowledge-points/merge', methods=['POST'])
 @login_required
 def api_merge_knowledge_points():
-    """合并知识点：将源知识点的错题全部归入目标知识点"""
+    """合并知识点：将源知识点（支持批量）的错题全部归入目标知识点。
+
+    与「重命名」同构——以叶子知识点为单元，保证四处一致：
+      1) 逐题改写 zhishidian（token 级：按 ； 拆分、按 / 取叶子，只替换命中的叶子，
+         保留并列点与章路径，处理单题多知识点行）；
+      2) sync_mistake_knowledge(replace=True) 重建 mistake_knowledge 关联（幂等复用目标节点）；
+      3) 删除源 knowledge_points 节点（linked_count 归零的孤儿），回收知识树；
+      4) recompute_knowledge_stats 重算掌握率。
+    不再使用整字段精确匹配的 UPDATE，避免与重命名同源的「字符串 vs 关系表」漂移。
+    """
     data = request.get_json(silent=True) or {}
-    source = (data.get('source') or '').strip()
+    raw_sources = data.get('sources')
+    if raw_sources is None:
+        raw_sources = data.get('source')  # 兼容单源旧调用
+    if isinstance(raw_sources, str):
+        raw_sources = [raw_sources]
+    sources = []
+    for s in (raw_sources or []):
+        s = (s or '').strip()
+        if s:
+            sources.append(s)
     target = (data.get('target') or '').strip()
-    if not source or not target:
+    if not sources or not target:
         return jsonify({'success': False, 'message': '源和目标知识点不能为空'})
-    if source == target:
-        return jsonify({'success': False, 'message': '不能合并到自身'})
+    if '；' in target or ';' in target:
+        return jsonify({'success': False, 'message': '目标知识点名称不能包含 ; 多知识点分隔符'})
+    if target in sources:
+        return jsonify({'success': False, 'message': '目标不能是待合并的源'})
 
-    cnt = execute_db(
-        "UPDATE mistake_records SET zhishidian=? WHERE zhishidian=?",
-        (target, source))
-    execute_db(
-        "UPDATE study_plans SET zhishidian=? WHERE zhishidian=?",
-        (target, source))
-    execute_db(
-        "DELETE FROM base_data WHERE category='knowledge_point' AND name=?",
-        (source,))
+    uid = g.user_uuid
+    tgt_chapter, tgt_leaf = parse_path(target)
+    total_moved = 0
+    multi_kp_rows = 0
+    src_leaves = []
 
-    return jsonify({'success': True, 'message': f'已将 {cnt} 道错题从「{source}」合并到「{target}」', 'count': cnt})
+    for source in sources:
+        if source == target:
+            continue
+        src_chapter, src_leaf = parse_path(source)
+        src_leaves.append(src_leaf)
+        # 1) 逐题处理：把命中源叶子的 token 替换为目标
+        rows = query_db(
+            "SELECT id, xueke, zhishidian FROM mistake_records "
+            "WHERE status != 'deleted' AND zhishidian LIKE ?",
+            ('%' + src_leaf + '%',))
+        for r in rows:
+            entries = split_knowledge_entries(r['zhishidian'])
+            new_entries = []
+            matched = False
+            for e in entries:
+                ch, lf = parse_path(e)
+                if lf == src_leaf:
+                    # 重建该 token：优先用目标的章路径，否则沿用原 token 的章
+                    if tgt_chapter:
+                        new_entries.append(tgt_chapter + '/' + tgt_leaf)
+                    elif ch:
+                        new_entries.append(ch + '/' + tgt_leaf)
+                    else:
+                        new_entries.append(tgt_leaf)
+                    matched = True
+                else:
+                    new_entries.append(e)
+            if not matched:
+                continue
+            if len(entries) > 1:
+                multi_kp_rows += 1
+            new_zh = '；'.join(new_entries)
+            execute_db(
+                "UPDATE mistake_records SET zhishidian=? WHERE id=?",
+                (new_zh, r['id']))
+            # 2) 重建该题的知识点关联（幂等复用目标节点，移除源节点关联）
+            sync_mistake_knowledge(r['id'], r['xueke'], new_zh, uid, replace=True)
+            total_moved += 1
+        # 学习计划中的同名知识点（通常为单 token）同步改写
+        plan_rows = query_db(
+            "SELECT id, zhishidian FROM study_plans WHERE zhishidian LIKE ? AND status != 'deleted'",
+            ('%' + src_leaf + '%',))
+        for pr in plan_rows:
+            p_entries = split_knowledge_entries(pr['zhishidian'])
+            p_new = []
+            for pe in p_entries:
+                pc, plf = parse_path(pe)
+                if plf == src_leaf:
+                    p_new.append((tgt_chapter or pc) + '/' + tgt_leaf if (tgt_chapter or pc) else tgt_leaf)
+                else:
+                    p_new.append(pe)
+            execute_db("UPDATE study_plans SET zhishidian=? WHERE id=?",
+                       ('；'.join(p_new), pr['id']))
+        # base_data 标签回收
+        execute_db(
+            "DELETE FROM base_data WHERE category='knowledge_point' AND name=?",
+            (src_leaf,))
+
+    # 3) 重算掌握率（目标与受影响子树一致）
+    recompute_knowledge_stats(uid)
+    # 4) 回收源 knowledge_points 叶子节点（重算后 linked_count 已归零的孤儿）
+    for sl in set(src_leaves):
+        execute_db(
+            "DELETE FROM knowledge_points WHERE level=3 AND name=? AND linked_count=0",
+            (sl,))
+
+    return jsonify({
+        'success': True,
+        'message': f'已将 {total_moved} 道错题合并到「{target}」'
+                   + (f'（含 {multi_kp_rows} 道多知识点行，已重排）' if multi_kp_rows else ''),
+        'merged': total_moved,
+        'multi_kp_rows': multi_kp_rows,
+    })
 
 
 @app.route('/api/knowledge-points/tree')
@@ -1512,10 +1669,10 @@ def api_create_knowledge_node():
 @app.route('/api/knowledge-points/node/<int:node_id>', methods=['DELETE'])
 @login_required
 def api_delete_knowledge_node(node_id):
-    """删除知识点树节点（学科不可删；章/知识点可删，级联删除其子孙节点）。
+    """删除知识点树节点（有数据的学科不可删；章/知识点可删，级联删除其子孙节点）。
 
     删除逻辑：
-      · level1 学科 → 直接拒绝（学科不可删除）
+      · level1 学科 → 仅当无子节点且无错题关联时允许删除（防止误删核心学科）
       · 递归删除 node_id 及其所有子孙节点（FOREIGN KEY ON DELETE CASCADE
         会自动清理 mistake_knowledge 关联）
       · 删除后重算 affected uuid 下的掌握率统计
@@ -1526,7 +1683,19 @@ def api_delete_knowledge_node(node_id):
     if not node:
         return jsonify({'success': False, 'message': '节点不存在'}), 404
     if node['level'] == 1:
-        return jsonify({'success': False, 'message': '学科不可删除'}), 403
+        # 检查是否有子节点
+        child_cnt = query_db(
+            "SELECT COUNT(*) c FROM knowledge_points WHERE parent_id=?",
+            (node_id,), one=True)['c']
+        # 检查是否有错题关联
+        link_cnt = query_db(
+            "SELECT COUNT(*) c FROM mistake_knowledge WHERE kp_id=?",
+            (node_id,), one=True)['c']
+        if child_cnt > 0 or link_cnt > 0:
+            return jsonify({
+                'success': False,
+                'message': f'学科「{node["name"]}」下有 {child_cnt} 个子节点、{link_cnt} 条错题关联，不可删除。请先清理子节点和关联错题。'
+            }), 403
 
     # 收集被删节点（含子孙），记录名称和 uuid 以便重算统计
     name = node['name']
@@ -1555,6 +1724,103 @@ def api_delete_knowledge_node(node_id):
                     'deleted_count': len(all_ids)})
 
 
+@app.route('/api/knowledge-points/move', methods=['POST'])
+@login_required
+def api_move_knowledge_node():
+    """移动/改父：把已有知识点节点挂到新的父节点下（重组知识树）。
+
+    校验：目标不能是自身或子孙（防环）；学科(level1) 与共享库节点不可移动。
+    更新 parent_id 后重算该 uuid 下的掌握率统计。
+    """
+    data = request.get_json(silent=True) or {}
+    node_id = data.get('node_id')
+    new_parent_id = data.get('new_parent_id')
+    if not node_id or not new_parent_id:
+        return jsonify({'success': False, 'message': '源节点与目标父节点不能为空'})
+    node = query_db(
+        "SELECT id, level, name, xueke, uuid FROM knowledge_points WHERE id=?",
+        (node_id,), one=True)
+    if not node:
+        return jsonify({'success': False, 'message': '节点不存在'}), 404
+    if node['level'] == 1:
+        return jsonify({'success': False, 'message': '学科不可移动'})
+    if node['uuid'] == 'xicheng_import':
+        return jsonify({'success': False, 'message': '共享库节点只读，不可移动'})
+
+    def _collect_ids(nid):
+        children = query_db("SELECT id FROM knowledge_points WHERE parent_id=?", (nid,))
+        ids = [nid]
+        for ch in children:
+            ids.extend(_collect_ids(ch['id']))
+        return ids
+    if int(new_parent_id) == int(node_id) or int(new_parent_id) in _collect_ids(node_id):
+        return jsonify({'success': False, 'message': '不能移动到自身或子孙节点下'})
+    target = query_db(
+        "SELECT id, name FROM knowledge_points WHERE id=?",
+        (new_parent_id,), one=True)
+    if not target:
+        return jsonify({'success': False, 'message': '目标父节点不存在'}), 404
+
+    execute_db("UPDATE knowledge_points SET parent_id=? WHERE id=?",
+                (new_parent_id, node_id))
+    recompute_knowledge_stats(node['uuid'])
+    return jsonify({'success': True,
+                    'message': f'已将「{node["name"]}」移动到「{target["name"]}」下'})
+
+
+@app.route('/api/knowledge-points/node/<int:node_id>/mistakes')
+@login_required
+def api_knowledge_node_mistakes(node_id):
+    """获取某知识点节点（含其全部子孙叶子）关联的错题摘要，供详情栏真实展示。
+
+    支持分页参数 page（默认 1），每页 6 条。
+    """
+    node = query_db("SELECT id, level, name FROM knowledge_points WHERE id=?", (node_id,), one=True)
+    if not node:
+        return jsonify({'success': False, 'message': '节点不存在'}), 404
+
+    page = request.args.get('page', 1, type=int)
+    per_page = 6
+
+    def _collect_ids(nid):
+        children = query_db("SELECT id FROM knowledge_points WHERE parent_id=?", (nid,))
+        ids = [nid]
+        for ch in children:
+            ids.extend(_collect_ids(ch['id']))
+        return ids
+    ids = _collect_ids(node_id)
+    placeholders = ','.join('?' * len(ids))
+    total = query_db(
+        f"SELECT COUNT(*) c FROM mistake_knowledge mk JOIN mistake_records mr ON mk.mistake_id=mr.id "
+        f"WHERE mk.kp_id IN ({placeholders}) AND mr.status != 'deleted'",
+        ids, one=True)['c']
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    offset_val = (page - 1) * per_page
+    rows = query_db(
+        f"""SELECT mr.id, mr.timu, mr.status, mr.xueke
+             FROM mistake_records mr
+             JOIN mistake_knowledge mk ON mk.mistake_id = mr.id
+             WHERE mk.kp_id IN ({placeholders}) AND mr.status != 'deleted'
+             ORDER BY mr.bstudio_create_time DESC LIMIT {per_page} OFFSET {offset_val}""",
+        ids)
+    leaf_names = []
+    def _gather2(nid):
+        nn = query_db("SELECT id, level, name FROM knowledge_points WHERE parent_id=?", (nid,))
+        for c in nn:
+            if c['level'] == 3: leaf_names.append(c['name'])
+            else: _gather2(c['id'])
+    _gather2(node_id)
+    plan_count = sum(query_db("SELECT COUNT(*) c FROM study_plans WHERE zhishidian LIKE ? AND status != 'deleted'",
+        ('%' + ln + '%',), one=True)['c'] for ln in set(leaf_names))
+    mistakes = [{'id': r['id'],
+                 'timu': (r['timu'] or '')[:60],
+                 'status': r['status'],
+                 'xueke': r['xueke']} for r in rows]
+    return jsonify({'success': True, 'total': total, 'plan_count': plan_count, 'mistakes': mistakes,
+                    'page': page, 'total_pages': total_pages, 'per_page': per_page})
+
+
+
 @app.route('/api/knowledge-points/migrate')
 @login_required
 def api_knowledge_points_migrate():
@@ -1569,12 +1835,8 @@ def api_knowledge_points_migrate():
 @app.route('/knowledge-map')
 @login_required
 def knowledge_map():
-    """知识点思维导图页面（ECharts tree 可视化多层结构）。"""
-    xueke_filter = request.args.get('xueke', '')
-    resp = make_response(render_template('knowledge_map.html',
-        xueke_filter=xueke_filter,
-        subjects=Config.get_subjects()))
-    return set_uuid_cookie(resp, g.user_uuid)
+    """历史入口：重定向到统一「知识树管理」页面。"""
+    return redirect('/knowledge-tree', 302)
 
 
 # ==================== 学习计划 ====================
@@ -1587,10 +1849,10 @@ def study_plans():
     status_filter = request.args.get('status', '')
     xueke_filter = request.args.get('xueke', '')
     priority_filter = request.args.get('priority', '', type=int)
-    per_page = 12
+    page, per_page, offset = paginate(request, 12)
 
-    # 构建查询条件
-    where = ["(target_date LIKE ? OR target_date IS NULL OR target_date='')"]
+    # 构建查询条件（默认排除已删除的计划）
+    where = ["status != 'deleted'", "(target_date LIKE ? OR target_date IS NULL OR target_date='')"]
     params = [month + '%']
 
     if status_filter:
@@ -1611,7 +1873,6 @@ def study_plans():
         params, one=True
     )['cnt']
 
-    offset = (page - 1) * per_page
     total_pages = max(1, (total + per_page - 1) // per_page)
 
     # 分页查询
@@ -1678,6 +1939,19 @@ def study_plans():
     for d in range(1, days_in_month + 1):
         month_days.append(d)
 
+    # 当月每日复习数据：已复习数 / 全部应复习数
+    cal_review = {}
+    today_str = date.today().isoformat()
+    for d in range(1, days_in_month + 1):
+        ds = f'{year}-{mon:02d}-{d:02d}'
+        done = query_db("SELECT COUNT(DISTINCT mistake_id) c FROM review_logs WHERE review_date=?", (ds,), one=True)['c']
+        total_r = 0
+        if ds == today_str:
+            total_r = query_db("SELECT COUNT(*) c FROM mistake_records WHERE status='active' AND next_review_at IS NOT NULL AND date(next_review_at) <= ?", (ds,), one=True)['c']
+        elif ds < today_str:
+            total_r = query_db("SELECT COUNT(*) c FROM mistake_records WHERE status='active' AND next_review_at IS NOT NULL AND date(next_review_at) <= ?", (ds,), one=True)['c']
+        cal_review[ds] = {'done': done, 'total': total_r}
+
     resp = make_response(render_template('study_plan.html',
         plans=plans,
         subjects=Config.get_subjects(),
@@ -1697,7 +1971,9 @@ def study_plans():
         total=total,
         status_filter=status_filter,
         xueke_filter=xueke_filter,
-        priority_filter=priority_filter))
+        priority_filter=priority_filter,
+        per_page=per_page,
+        cal_review=cal_review))
     return set_uuid_cookie(resp, g.user_uuid)
 
 
@@ -1710,9 +1986,9 @@ def api_study_plans_list():
     status_filter = request.args.get('status', '')
     xueke_filter = request.args.get('xueke', '')
     priority_filter = request.args.get('priority', '', type=int)
-    per_page = 12
+    page, per_page, offset = paginate(request, 12)
 
-    where = ["(target_date LIKE ? OR target_date IS NULL OR target_date='')"]
+    where = ["status != 'deleted'", "(target_date LIKE ? OR target_date IS NULL OR target_date='')"]
     params = [month + '%']
     if status_filter:
         where.append('status = ?'); params.append(status_filter)
@@ -1723,7 +1999,6 @@ def api_study_plans_list():
     where_sql = ' AND '.join(where)
 
     total = query_db(f"SELECT COUNT(*) as cnt FROM study_plans WHERE {where_sql}", params, one=True)['cnt']
-    offset = (page - 1) * per_page
     total_pages = max(1, (total + per_page - 1) // per_page)
 
     plans = query_db(
@@ -1749,7 +2024,7 @@ def api_study_plans_list():
         subjects=Config.get_subjects(),
         page=page, total_pages=total_pages, total=total,
         month=month, status_filter=status_filter,
-        xueke_filter=xueke_filter, priority_filter=priority_filter)
+        xueke_filter=xueke_filter, priority_filter=priority_filter, per_page=per_page)
 
 
 @app.route('/study-plans/add', methods=['POST'])
@@ -1883,7 +2158,7 @@ def plan_mistakes(plan_id):
     else:
         suggested = query_db(
             '''SELECT mr.* FROM mistake_records mr
-               WHERE 1=1
+               WHERE mr.status != 'deleted'
                AND mr.id NOT IN (SELECT mistake_id FROM plan_mistakes WHERE plan_id=?)
                ORDER BY mr.bstudio_create_time DESC LIMIT 20''',
             (plan_id,)
@@ -2010,13 +2285,12 @@ def review_plan():
     where_sql = ' AND '.join(where_clauses)
     order_sql = 'difficulty DESC, review_stage ASC' if sort == 'priority' else 'next_review_at ASC'
 
-    # 获取今日待复习错题
+    # 获取今日待复习错题（不设上限，全部加载）
     due_reviews = query_db(
         f'''SELECT * FROM mistake_records
            WHERE {where_sql}
-           ORDER BY {order_sql}
-           LIMIT ?''',
-        params + [user_config['daily_review_limit']]
+           ORDER BY {order_sql}''',
+        params
     )
 
     # 为待复习错题加载图片附件
@@ -2036,25 +2310,17 @@ def review_plan():
 
     # 今日已复习数量
     reviewed_today = query_db(
-        'SELECT COUNT(*) as cnt FROM review_logs WHERE 1=1 AND review_date = ?',
+        'SELECT COUNT(*) as cnt FROM review_logs WHERE review_date = ?',
         (today_str,), one=True
     )['cnt']
 
-    # 复习日历热力图数据（最近 60 天）
-    calendar_data = {}
-    for i in range(60):
-        d = date.today() - __import__('datetime',).timedelta(days=i)
-        cnt = query_db(
-            'SELECT COUNT(*) as cnt FROM review_logs WHERE 1=1 AND review_date = ?',
-            (d.isoformat(),), one=True
-        )['cnt']
-        if cnt > 0:
-            calendar_data[d.isoformat()] = cnt
+    # 今日全部应复习题数 = 待复习 + 已复习
+    total_due_today = len(due_reviews) + reviewed_today
 
     resp = make_response(render_template('review_plan.html',
         due_reviews=due_reviews,
         reviewed_today=reviewed_today,
-        calendar_data=calendar_data,
+        total_due_today=total_due_today,
         user_config=user_config,
         review_algorithm=user_config['review_algorithm'],
         xueke_filter=xueke_filter,
@@ -2105,8 +2371,8 @@ def review_config():
         algorithm = request.form.get('algorithm', 'sm2')
         daily_limit = request.form.get('daily_limit', 20, type=int)
         execute_db(
-            'UPDATE user_config SET review_algorithm=?, daily_review_limit=? WHERE 1=1',
-            (algorithm, daily_limit)
+            'UPDATE user_config SET review_algorithm=?, daily_review_limit=? WHERE uuid=?',
+            (algorithm, daily_limit, g.user_uuid)
         )
         flash('复习配置已更新', 'success')
         return redirect(url_for('review_plan',))
@@ -2181,11 +2447,10 @@ def submit_review(mistake_id):
 @login_required
 def review_history():
     """历史复习记录页面"""
-    page = request.args.get('page', 1, type=int)
+    page, per_page, offset = paginate(request, 20)
     status_filter = request.args.get('status', '')
     xueke_filter = request.args.get('xueke', '')
     date_range = request.args.get('range', 'all')
-    per_page = 20
 
     # 日期范围
     date_where = ''
@@ -2218,7 +2483,6 @@ def review_history():
         base_params, one=True
     )['cnt']
     total_pages = max(1, (total + per_page - 1) // per_page)
-    offset = (page - 1) * per_page
 
     # 分页查询
     reviews = query_db(
@@ -2274,7 +2538,8 @@ def review_history():
         status_filter=status_filter, xueke_filter=xueke_filter,
         date_range=date_range,
         total_all=total_all, correct_all=correct_all,
-        correct_rate=correct_rate, today_cnt=today_cnt, streak=streak
+        correct_rate=correct_rate, today_cnt=today_cnt, streak=streak,
+        per_page=per_page
     ))
     return set_uuid_cookie(resp, g.user_uuid)
 
@@ -2283,11 +2548,10 @@ def review_history():
 @login_required
 def api_review_history_list():
     """AJAX 局部刷新复习记录列表"""
-    page = request.args.get('page', 1, type=int)
+    page, per_page, offset = paginate(request, 20)
     status_filter = request.args.get('status', '')
     xueke_filter = request.args.get('xueke', '')
     date_range = request.args.get('range', 'all')
-    per_page = 20
 
     date_where = ''
     if date_range == '7days':
@@ -2316,7 +2580,6 @@ def api_review_history_list():
         base_params, one=True
     )['cnt']
     total_pages = max(1, (total + per_page - 1) // per_page)
-    offset = (page - 1) * per_page
 
     reviews = query_db(
         f"""SELECT rl.*, mr.timu, mr.xueke, mr.zhishidian, mr.status as mistake_status
@@ -2340,7 +2603,7 @@ def api_review_history_list():
         reviews=reviews, grouped=dict(grouped),
         page=page, total_pages=total_pages, total=total,
         status_filter=status_filter, xueke_filter=xueke_filter,
-        date_range=date_range, subjects=Config.get_subjects())
+        date_range=date_range, subjects=Config.get_subjects(), per_page=per_page)
 
 
 # ==================== 统计分析 ====================
@@ -2352,7 +2615,7 @@ def statistics():
     # 学科分布
     xueke_stats = query_db(
         '''SELECT xueke, COUNT(*) as cnt FROM mistake_records
-           WHERE 1=1 AND status != 'archived'
+           WHERE status != 'deleted'
            GROUP BY xueke ORDER BY cnt DESC''',
         ()
     )
@@ -2367,7 +2630,7 @@ def statistics():
     # 知识点分布（Top 10）
     zp_stats = query_db(
         '''SELECT zhishidian, COUNT(*) as cnt FROM mistake_records
-           WHERE 1=1 AND zhishidian != ''
+           WHERE status != 'deleted' AND zhishidian != ''
            GROUP BY zhishidian ORDER BY cnt DESC LIMIT 10''',
         ()
     )
@@ -2382,7 +2645,7 @@ def statistics():
     # 难度分布雷达图
     difficulty_stats = query_db(
         '''SELECT difficulty, COUNT(*) as cnt FROM mistake_records
-           WHERE 1=1 GROUP BY difficulty ORDER BY difficulty''',
+           WHERE status != 'deleted' GROUP BY difficulty ORDER BY difficulty''',
         ()
     )
     radar_chart = None
@@ -2397,8 +2660,8 @@ def statistics():
     # 状态统计
     status_stats = query_db(
         '''SELECT status, COUNT(*) as cnt FROM mistake_records
-           WHERE 1=1 GROUP BY status''',
-        ()
+           GROUP BY status''',
+        (), exclude_deleted=False
     )
     status_data = {r['status']: r['cnt'] for r in status_stats}
     active_cnt = status_data.get('active', 0)
@@ -2413,7 +2676,7 @@ def statistics():
         week_start = date.today() - __import__('datetime',).timedelta(days=date.today().weekday() + i * 7)
         week_end = week_start + __import__('datetime',).timedelta(days=6)
         cnt = query_db(
-            'SELECT COUNT(*) as cnt FROM review_logs WHERE 1=1 AND review_date BETWEEN ? AND ?',
+            'SELECT COUNT(*) as cnt FROM review_logs WHERE review_date BETWEEN ? AND ?',
             (week_start.isoformat(), week_end.isoformat()), one=True
         )['cnt']
         trend_labels.append(week_start.strftime('%m/%d',))
@@ -2426,7 +2689,7 @@ def statistics():
 
     # 错误类型分布（从 report 合并）
     from error_classifier import classify_batch, ERROR_TYPES
-    all_records = query_db("SELECT * FROM mistake_records WHERE 1=1 ORDER BY bstudio_create_time DESC", ())
+    all_records = query_db("SELECT * FROM mistake_records WHERE status != 'deleted' ORDER BY bstudio_create_time DESC", ())
     error_counts = classify_batch(all_records)
     error_labels = [k for k, v in error_counts.items() if v > 0] or list(error_counts.keys())
     error_values = [error_counts[k] for k in error_labels]
@@ -2498,7 +2761,7 @@ def export_excel():
 
         # 数据
         questions = query_db(
-            "SELECT * FROM mistake_records WHERE 1=1 ORDER BY bstudio_create_time DESC",
+            "SELECT * FROM mistake_records WHERE status != 'deleted' ORDER BY bstudio_create_time DESC",
             ()
         )
         for row_idx, q in enumerate(questions, 2):
@@ -2555,7 +2818,7 @@ def export_pdf():
         from fpdf import FPDF
 
         questions = query_db(
-            "SELECT * FROM mistake_records WHERE 1=1 ORDER BY bstudio_create_time DESC", ()
+            "SELECT * FROM mistake_records WHERE status != 'deleted' ORDER BY bstudio_create_time DESC", ()
         )
 
         pdf = FPDF()
@@ -2600,7 +2863,7 @@ def export_pdf():
 @login_required
 def export_anki():
     questions = query_db(
-        "SELECT * FROM mistake_records WHERE 1=1 ORDER BY bstudio_create_time DESC", ()
+        "SELECT * FROM mistake_records WHERE status != 'deleted' ORDER BY bstudio_create_time DESC", ()
     )
     lines = []
     for q in questions:
@@ -2853,4 +3116,10 @@ if __name__ == '__main__':
     print("  多学科错题管理 | 智能复习 | 统计分析")
     print("=" * 50)
     init_db()
+    # 执行数据库迁移
+    try:
+        from migrate import run_migrations
+        run_migrations()
+    except Exception as e:
+        print(f"⚠️  数据库迁移警告: {e}")
     app.run(host='0.0.0.0', port=5000, debug=os.environ.get('FLASK_DEBUG', '1') == '1')

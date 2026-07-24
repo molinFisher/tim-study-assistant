@@ -56,43 +56,52 @@ def parse_path(entry):
 
 # ============ 节点确保（幂等） ============
 
-def ensure_subject(xueke, uuid):
+def ensure_subject(xueke, uuid, claim=False):
     """确保 level1 学科节点存在（全局查找，避免跨 uuid 重复建节点），返回节点 id。
 
     单租户场景下知识点库为共享库：按 (level, name, parent_id) 全局唯一匹配，
     不论当前 uuid 是否已存在该学科，都复用同一节点，从根本上杜绝「数学/英语」
     等学科在多个 uuid 下重复出现。新建节点时仍记录传入 uuid 作为归属标记。
+
+    claim=True（共享库导入路径）：复用既有节点时将其 uuid 改写为共享库 uuid，
+    使「共享库」节点始终带有共享标记，重建(migrate)时不会被误清。
     """
     xueke = normalize_name(xueke)
     if not xueke:
         return None
     row = query_db(
-        "SELECT id FROM knowledge_points WHERE level=1 AND name=? AND parent_id IS NULL",
+        "SELECT id, uuid FROM knowledge_points WHERE level=1 AND name=? AND parent_id IS NULL",
         (xueke,), one=True)
     if row:
-        return row['id']
+        if claim and row["uuid"] != uuid:
+            execute_db("UPDATE knowledge_points SET uuid=? WHERE id=?", (uuid, row["id"]))
+        return row["id"]
     return execute_db(
         """INSERT INTO knowledge_points (parent_id, level, name, xueke, uuid, sort_order, created_at, updated_at)
            VALUES (NULL, 1, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
         (xueke, xueke, uuid))
 
 
-def ensure_node(name, level, xueke, uuid, parent_id):
+def ensure_node(name, level, xueke, uuid, parent_id, claim=False):
     """确保指定 (level, name, parent_id) 的知识点节点存在（全局查找），返回节点 id。
 
     与 ensure_subject 同理：共享库内按 (level, name, parent_id) 唯一匹配，
     复用既有节点，避免同一 章/知识点 在多个 uuid 下分裂。
+
+    claim=True（共享库导入路径）：复用既有节点时将其 uuid 改写为共享库 uuid。
     """
     if parent_id is None:
         row = query_db(
-            "SELECT id FROM knowledge_points WHERE level=? AND name=? AND parent_id IS NULL",
+            "SELECT id, uuid FROM knowledge_points WHERE level=? AND name=? AND parent_id IS NULL",
             (level, name), one=True)
     else:
         row = query_db(
-            "SELECT id FROM knowledge_points WHERE level=? AND name=? AND parent_id=?",
+            "SELECT id, uuid FROM knowledge_points WHERE level=? AND name=? AND parent_id=?",
             (level, name, parent_id), one=True)
     if row:
-        return row['id']
+        if claim and row["uuid"] != uuid:
+            execute_db("UPDATE knowledge_points SET uuid=? WHERE id=?", (uuid, row["id"]))
+        return row["id"]
     return execute_db(
         """INSERT INTO knowledge_points (parent_id, level, name, xueke, uuid, sort_order, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
@@ -136,14 +145,18 @@ def sync_mistake_knowledge(mistake_id, xueke, zhishidian, uuid, replace=True):
 
 # ============ 统计冗余维护 ============
 
-def recompute_knowledge_stats(uuid):
+def recompute_knowledge_stats(uuid=None):
     """
     重算 knowledge_points 的冗余统计字段（linked_count / mastered_count /
     review_count / mastery_rate）。先算叶子(level3)，再逐级向上 rollup。
     mastery_rate = 已掌握错题数 / 关联错题数 * 100（红<40 / 黄40~75 / 绿>75）。
+
+    注意：knowledge_points 为单租户共享库（ensure_subject/ensure_node 全局查找），
+    统计时不再按 uuid 过滤，确保共享节点也能被正确统计。
+    uuid 参数保留向后兼容，但不再用于过滤。
     """
     # 1) 叶子节点(level3)：直接按关联错题聚合
-    leaves = query_db("SELECT id FROM knowledge_points WHERE uuid=? AND level=3", (uuid,))
+    leaves = query_db("SELECT id FROM knowledge_points WHERE level=3")
     for lv in leaves:
         kid = lv['id']
         row = query_db(
@@ -164,7 +177,7 @@ def recompute_knowledge_stats(uuid):
 
     # 2) 逐级向上 rollup（章 level2 -> 学科 level1）
     for lvl in (2, 1):
-        nodes = query_db("SELECT id FROM knowledge_points WHERE uuid=? AND level=?", (uuid, lvl))
+        nodes = query_db("SELECT id FROM knowledge_points WHERE level=?", (lvl,))
         for n in nodes:
             nid = n['id']
             row = query_db(
@@ -198,7 +211,8 @@ def get_knowledge_tree(uuid=None, xueke=None):
     where = []
     params = []
     if uuid:
-        where.append("uuid=?")
+        # 思维导图视图：返回当前用户节点 + 共享库节点（uuid 为 'xicheng_import' 或 NULL）
+        where.append("(uuid=? OR uuid='xicheng_import' OR uuid IS NULL)")
         params.append(uuid)
     if xueke:
         where.append("xueke=?")
@@ -235,7 +249,9 @@ def migrate_all_knowledge():
     """
     conn = get_db()
     conn.execute("DELETE FROM mistake_knowledge")
-    conn.execute("DELETE FROM knowledge_points")
+    # 保留共享导入库（uuid='xicheng_import'），仅销毁/重建由错题衍生的个人知识树节点，
+    # 避免「重建知识点结构」把共享知识库一并清空。
+    conn.execute("DELETE FROM knowledge_points WHERE uuid IS NULL OR uuid != ?", ('xicheng_import',))
     conn.commit()
     conn.close()
 

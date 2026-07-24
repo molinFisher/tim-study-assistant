@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block title %}知识树管理 - Tim 学习助手{% endblock %}
+
+{% block extra_head %}
+<style>
+:root:hover{}
+#app{display:flex;flex-direction:column;height:calc(100vh - 56px)}
+.topbar{display:flex;align-items:center;gap:10px;padding:10px 16px;flex:0 0 auto;flex-wrap:wrap}
+#search{flex:1;min-width:140px;max-width:260px}
+#search input{width:100%;padding:7px 10px;border:1px solid var(--bs-border-color);border-radius:8px;font-size:13px}
+.main{display:flex;flex:1;min-height:0;overflow:hidden}
+#treePane{width:300px;flex:0 0 300px;border-right:1px solid var(--bs-border-color);overflow:auto;padding:8px}
+#detailPane{flex:1;overflow:auto;padding:18px 22px}
+.node{display:flex;align-items:center;gap:5px;padding:5px 8px;border-radius:8px;cursor:pointer;user-select:none;font-size:13px}
+.node:hover{background:rgba(var(--bs-primary-rgb,.13,.110,.253),.07)}
+.node.sel,.node.sel:hover{background:rgba(var(--bs-primary-rgb,.13,.110,.253),.12)}
+.node .tw{width:20px;text-align:center;color:var(--bs-secondary-color);flex:0 0 20px;font-size:16px;line-height:1}
+.node .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node .cnt{font-size:11px;color:var(--bs-secondary-color);background:var(--bs-tertiary-bg);border-radius:10px;padding:1px 7px}
+.node .chk{width:15px;height:15px;flex:0 0 15px;accent-color:var(--bs-primary)}
+.node.lvl1 .nm{font-weight:700}
+.node.lvl2 .nm{font-weight:600}
+.dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px;display:inline-block}
+.breadcrumb{font-size:13px;color:var(--bs-secondary-color);margin-bottom:4px}
+.breadcrumb b{color:var(--bs-body-color)}
+.detail h1{font-size:20px;margin:0 0 2px}
+.detail .sub{font-size:13px;color:var(--bs-secondary-color);margin:0 0 16px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:10px;margin-bottom:18px}
+.card{background:var(--bs-tertiary-bg);border:1px solid var(--bs-border-color);border-radius:12px;padding:12px 14px}
+.card .k{font-size:12px;color:var(--bs-secondary-color)}
+.card .v{font-size:22px;font-weight:700;margin-top:4px}
+.pbar{height:7px;border-radius:6px;background:var(--bs-secondary-bg);overflow:hidden;margin-top:6px}
+.pbar>i{display:block;height:100%}
+.sect{font-weight:700;font-size:14px;margin:16px 0 8px;display:flex;align-items:center;gap:6px}
+.mistake{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--bs-border-color);border-radius:10px;margin-bottom:6px;cursor:pointer;font-size:13px}
+.mistake:hover{border-color:var(--bs-primary)}
+.mistake .q{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag{font-size:11px;padding:1px 8px;border-radius:10px;background:var(--bs-secondary-bg);color:var(--bs-secondary-color)}
+.pill{font-size:11px;padding:2px 9px;border-radius:20px;color:#fff;display:inline-block}
+.ctx{position:fixed;z-index:1200;min-width:170px;background:var(--bs-body-bg);border:1px solid var(--bs-border-color);border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.15);padding:4px;display:none}
+.ctx button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--bs-body-color);padding:7px 10px;border-radius:7px;cursor:pointer;font-size:13px}
+.ctx button:hover{background:var(--bs-tertiary-bg)}
+.ctx button:disabled{color:var(--bs-secondary-color);cursor:not-allowed}
+.empty{text-align:center;color:var(--bs-secondary-color);padding:60px 20px}
+.empty .ic{font-size:48px;opacity:.4}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.25s;z-index:1400;pointer-events:none}
+.toast.show{opacity:.95}
+#renameOverlay{display:none;position:fixed;inset:0;z-index:1999;background:rgba(0,0,0,.35);align-items:center;justify-content:center}
+#renameOverlay.show{display:flex}
+#renameBox{background:var(--bs-body-bg);border-radius:14px;padding:16px 18px;min-width:280px;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+#renameBox input{width:100%;padding:8px;margin:10px 0;border:1px solid var(--bs-border-color);border-radius:8px;font-size:14px}
+.mistake-pager{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px}
+.mistake-pager button{background:var(--bs-tertiary-bg);border:1px solid var(--bs-border-color);border-radius:6px;padding:3px 12px;cursor:pointer;font-size:12px;color:var(--bs-body-color)}
+.mistake-pager button:hover{background:var(--bs-primary);color:#fff;border-color:var(--bs-primary)}
+.mistake-pager button:disabled{opacity:.4;cursor:not-allowed}
+.mistake-pager span{font-size:12px;color:var(--bs-secondary-color)}
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="app">
+  <div class="topbar">
+    <span style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:6px"><span class="dot" style="background:var(--bs-primary)"></span> 知识树管理</span>
+    <span id="search"><span style="position:absolute;padding:7px 0 0 9px;color:var(--bs-secondary-color);font-size:12px">🔍</span><input id="searchInput" placeholder="搜索知识点..." style="padding-left:28px"></span>
+    <select id="xuekeFilter" class="form-select form-select-sm" style="width:auto">
+      <option value="">全部学科</option>
+      {% for s in subjects %}
+      <option value="{{ s }}">{{ s }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-primary btn-sm" id="btnAdd">＋ 新增</button>
+    <button class="btn btn-outline-secondary btn-sm" id="btnMerge" disabled>⚏ 合并选中</button>
+    <button class="btn btn-outline-secondary btn-sm" id="btnBulk" disabled>🗑 批量删除</button>
+    <span id="selInfo" class="tag" style="display:none"></span>
+    <div class="spacer" style="flex:1"></div>
+  </div>
+  <div class="main">
+    <div id="treePane"></div>
+    <div class="detail" id="detailPane"></div>
+  </div>
+</div>
+<div class="ctx" id="ctxMenu"></div>
+<div id="renameOverlay"><div id="renameBox">
+  <div style="font-weight:700">重命名</div>
+  <div class="tag" id="renameHint" style="margin-bottom:4px"></div>
+  <input id="renameInput" maxlength="40" placeholder="新名称…">
+  <div class="d-flex gap-2 justify-content-end">
+    <button class="btn btn-outline-secondary btn-sm" onclick="closeRename()">取消</button>
+    <button class="btn btn-primary btn-sm" id="renameOk">确定</button>
+  </div>
+</div></div>
+<div class="modal fade" id="moveModal" tabindex="-1"><div class="modal-dialog modal-sm"><div class="modal-content">
+ <div class="modal-header"><h5 class="modal-title">移动到…</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+ <div class="modal-body">
+  <select id="moveTarget" class="form-select"></select>
+  <div id="moveError" class="text-danger small mt-1" style="display:none"></div>
+ </div>
+ <div class="modal-footer">
+  <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+  <button class="btn btn-primary btn-sm" id="moveOk">移动</button>
+ </div>
+</div></div></div>
+<div class="toast" id="toast"></div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function(){
+'use strict';
+var csrfToken=document.querySelector('meta[name="csrf-token"]')?.content||'';
+var api=function(url,opts){var o=opts||{};o.headers=o.headers||{};o.headers['X-CSRF-Token']=csrfToken;if(typeof o.body==='object'&&!(o.body instanceof FormData)){o.headers['Content-Type']='application/json';o.body=JSON.stringify(o.body)}return fetch(url,o).then(function(r){return r.json()})};
+var post=function(u,b){return api(u,{method:'POST',body:b})};
+var del=function(u){return api(u,{method:'DELETE'})};
+
+/* ===== state ===== */
+var treeData=[]; // nested tree [{id,parent_id,level,name,xueke,linked_count,mastered_count,review_count,mastery_rate,uuid,children}]
+var flatMap={};  // id -> node reference
+var selId=null;
+var checked=new Set();
+var expanded=new Set();
+var searchQ='',xuekeF='';
+/* ===== fetch tree ===== */
+function fetchTree(cb){var xk=xuekeF?'&xueke='+encodeURIComponent(xuekeF):'';api('/api/knowledge-points/tree?scope=all'+xk).then(function(r){treeData=r.tree||[];buildFlat();if(!selId||!flatMap[selId]){selId=treeData.length?treeData[0].id:null}if(cb)cb();renderAll()});}
+function buildFlat(){flatMap={};function walk(ns){ns.forEach(function(n){flatMap[n.id]=n;if(n.children)walk(n.children)})};walk(treeData)}
+/* ===== render tree ===== */
+function renderTree(){var pane=document.getElementById('treePane');var q=searchQ.toLowerCase();
+ function vis(n){if(!q)return true;var self=n.name.toLowerCase().includes(q);if(self){expanded.add(n.parent_id)}return self||(n.children||[]).some(vis)}
+ function levColor(n){return masteryColor(n.mastery_rate,n.linked_count>0)}
+ var html='';function walk(ns,d){ns.filter(vis).forEach(function(n){var has=(n.children||[]).length>0;var exp=expanded.has(n.id);var isLeaf=n.level===3;var isSel=selId===n.id;var chk=checked.has(n.id);
+  html+='<div class="node lvl'+n.level+(isSel?' sel':'')+'" data-id="'+n.id+'">';
+  html+='<span class="tw">'+(has?(exp?'▾':'▸'):'')+'</span>';
+  html+=isLeaf?('<input type="checkbox" class="chk" '+(chk?'checked':'')+' data-id="'+n.id+'">'):'<span style="width:15px;flex:0 0 15px"></span>';
+  var cnt=n.linked_count||0;if(!isLeaf){cnt=(n.children||[]).reduce(function(a,c){return a+(c.linked_count||0)},0)}
+  html+='<span class="dot" style="background:'+levColor(n)+'"></span>';
+  html+='<span class="nm" data-ren="'+n.id+'">'+hl(n.name)+(n.shared?' <span class="tag">共享</span>':'')+'</span>';
+  html+='<span class="cnt">'+cnt+'</span></div>';
+  if(has&&exp)walk(n.children,d+1)});
+ }
+ walk(treeData,0);
+ pane.innerHTML=html||'<div class="empty"><div class="ic">🌳</div>无匹配知识点</div>';
+ bindTree();
+}
+function bindTree(){document.querySelectorAll('#treePane .node').forEach(function(el){var id=+el.dataset.id;var n=flatMap[id];
+ el.addEventListener('click',function(e){if(e.target.classList.contains('chk'))return;
+  /* click on tw icon -> toggle expand (no selection change) */
+  if(e.target.classList.contains('tw')){var has=(n.children||[]).length>0;if(has){if(expanded.has(id))expanded.delete(id);else expanded.add(id);renderTree()};return}
+  selId=id;renderTree();renderDetail();});
+ el.addEventListener('dblclick',function(e){if(e.target.classList.contains('nm'))startRename(id);});
+ el.addEventListener('contextmenu',function(e){e.preventDefault();openCtx(e,id);});
+ var chk=el.querySelector('.chk');if(chk){chk.addEventListener('change',function(){if(chk.checked)checked.add(id);else checked.delete(id);updateSelInfo()});
+}})}
+/* ===== render detail ===== */
+var curMistakes=[],curPlanCount=0,curMistakePage=1,curMistakePages=1;
+function renderMistakes(){var h='';
+ curMistakes.forEach(function(m){var st=m.status==='mastered'?'已掌握':'活跃';
+  h+='<div class="mistake" onclick="window.open(\'/questions/'+m.id+'\',\'_blank\')"><div class="q">'+esc(m.timu||'(无标题)')+'</div><span class="tag">'+st+'</span><span class="tag">'+esc(m.xueke||'')+'</span><span style="color:var(--bs-primary)">›</span></div>';});
+ if(!curMistakes.length)h='<div class="tag">暂无关联错题</div>';
+ document.getElementById('relMistakes').innerHTML=h;
+ var pager=document.getElementById('mistakePager');
+ if(curMistakePages>1){pager.style.display='flex';pager.className='mistake-pager';
+  pager.innerHTML='<button '+(curMistakePage<=1?'disabled':'')+' onclick="goMistakePage('+(curMistakePage-1)+')">‹ 上一页</button>'
+   +'<span>'+curMistakePage+' / '+curMistakePages+'</span>'
+   +'<button '+(curMistakePage>=curMistakePages?'disabled':'')+' onclick="goMistakePage('+(curMistakePage+1)+')">下一页 ›</button>';
+ }else{pager.style.display='none'}
+}
+function goMistakePage(pg){curMistakePage=pg;
+ fetch('/api/knowledge-points/node/'+selId+'/mistakes?page='+pg,{headers:{'X-CSRF-Token':csrfToken}}).then(function(r){return r.json()}).then(function(d){
+  curMistakes=d.mistakes||[];curMistakePage=d.page||1;curMistakePages=d.total_pages||1;
+  renderMistakes();
+ });
+}
+window.goMistakePage=goMistakePage;
+window.closeRename=closeRename;
+function renderDetail(){var n=flatMap[selId];var pane=document.getElementById('detailPane');
+ curMistakePage=1;curMistakePages=1;curMistakes=[];
+ if(!n){pane.innerHTML='<div class="empty"><div class="ic">🧭</div><div>从左侧选择知识点查看统计与关联错题</div></div>';curMistakes=[];return}
+ var anc=[];var p=n;while(p){anc.unshift(p);p=flatMap[p.parent_id]}
+ var chain=anc.map(function(a){return '<b>'+esc(a.name)+'</b>'}).join(' / ');
+ var l=n.linked_count||0,m=n.mastered_count||0,a=l-m,r=n.review_count||0,rate=n.mastery_rate||0,col=masteryColor(rate,l>0);
+ var lvlLabel={1:'学科',2:'章',3:'知识点'}[n.level];
+ pane.innerHTML='<div class="breadcrumb">'+chain+'</div>'
+  +'<h1>'+esc(n.name)+(n.shared?' <span class="tag">共享库·只读</span>':'')+'</h1>'
+  +'<p class="sub">层级：'+lvlLabel+' · 学科：'+esc(n.xueke||'—')+(n.uuid==='xicheng_import'?' · 共享库':'')+'</p>'
+  +'<div class="cards"><div class="card"><div class="k">总题数</div><div class="v">'+l+'</div></div>'
+  +'<div class="card"><div class="k">活跃</div><div class="v">'+a+'</div></div>'
+  +'<div class="card"><div class="k">已掌握</div><div class="v" style="color:'+col+'">'+m+'</div></div>'
+  +'<div class="card"><div class="k">掌握率</div><div class="v" style="color:'+col+'">'+rate+'%</div><div class="pbar"><i style="width:'+rate+'%;background:'+col+'"></i></div></div>'
+  +'<div class="card"><div class="k">复习次数</div><div class="v">'+r+'</div></div></div>'
+  +'<div class="sect">🔗 关联错题 <span class="tag" id="relCount">加载中…</span>'
+    +' <a class="link" href="/questions?zhishidian='+encodeURIComponent(n.name)+'" style="color:var(--bs-primary);text-decoration:none;font-size:13px">在错题本筛选 ›</a></div>'
+  +'<div id="relMistakes" class="tag" style="font-size:13px;display:block">加载中…</div>'
+  +'<div id="mistakePager" style="display:none"></div>'
+  +'<div class="sect">📌 关联学习计划 <span class="tag" id="relPlans">—</span></div>';
+ fetch('/api/knowledge-points/node/'+selId+'/mistakes',{headers:{'X-CSRF-Token':csrfToken}}).then(function(r){return r.json()}).then(function(d){
+  curMistakes=d.mistakes||[];curPlanCount=d.plan_count||0;
+  curMistakePage=d.page||1;curMistakePages=d.total_pages||1;
+  document.getElementById('relCount').textContent=(d.total||0)+' 道';
+  document.getElementById('relPlans').textContent=(d.plan_count||0)+' 条计划包含此'+(n.level===3?'知识点':lvlLabel);
+  renderMistakes();
+ }).catch(function(){document.getElementById('relCount').textContent='—';document.getElementById('relMistakes').innerHTML='<span class="tag">加载失败</span>'});
+}
+/* ===== actions ===== */
+function refetch(){var s=selId;fetchTree(function(){selId=s})}
+var ctxId=null;
+
+function openCtx(e,id){ctxId=id;var n=flatMap[id];var m=document.getElementById('ctxMenu');
+ var btns='<button data-act="addChild">＋ 加下级</button><button data-act="addSibling">＋ 加同级</button><button data-act="rename" '+(n.shared?'disabled':'')+'>✎ 重命名</button><button data-act="move" '+(n.level===1||n.shared?'disabled':'')+'>↪ 移动到…</button><button data-act="delete" '+(n.level===1||n.shared?'disabled':'')+'>🗑 删除</button>';
+ m.innerHTML=btns;m.style.display='block';
+ var x=e.clientX,y=e.clientY,mw=m.offsetWidth,mh=m.offsetHeight;
+ if(x+mw>innerWidth)x=innerWidth-mw-8;if(y+mh>innerHeight)y=innerHeight-mh-8;
+ m.style.left=x+'px';m.style.top=y+'px';
+}
+document.getElementById('ctxMenu').addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;document.getElementById('ctxMenu').style.display='none';
+ var act=b.dataset.act,n=flatMap[ctxId];
+ if(act==='addChild')openNodeAdd(ctxId,'child');
+ else if(act==='addSibling')openNodeAdd(ctxId,'sibling');
+ else if(act==='rename')startRename(ctxId);
+ else if(act==='move')openMove(ctxId);
+ else if(act==='delete')deleteNode(ctxId);
+});
+document.addEventListener('click',function(e){if(!e.target.closest('#ctxMenu'))document.getElementById('ctxMenu').style.display='none'});
+
+/* add node */
+function openNodeAdd(parentId,mode){var name=prompt(mode==='child'?'新增下级节点名称：':'新增��级节点名称：');if(!name||!name.trim())return;name=name.trim();
+ if(/[/；;]/.test(name)){toast('名称不能含 / ; 分隔符');return}
+ var body={name:name,parent_id:parentId,mode:mode};if(!parentId){delete body.parent_id;delete body.mode}
+ post('/api/knowledge-points/node',body).then(function(d){if(d.success){toast(d.message);expanded.add(parentId);refetch()}else{toast(d.message)}})}
+
+/* rename */
+var renameId=null;
+function startRename(id){var n=flatMap[id];if(n.level===1){toast('学科暂不支持重命名');return};if(n.shared){toast('共享库节点只读');return}
+ renameId=id;document.getElementById('renameInput').value=n.name;document.getElementById('renameHint').textContent='当前「'+n.name+'」';
+ document.getElementById('renameOverlay').classList.add('show');setTimeout(function(){document.getElementById('renameInput').focus()},50)}
+document.getElementById('renameOk').onclick=function(){var nn=document.getElementById('renameInput').value.trim();var old=flatMap[renameId].name;
+ if(!nn||nn===old){closeRename();return}
+ if(/[/；;]/.test(nn)){toast('名称不能含 / ; 分隔符');return}
+ post('/api/knowledge-points/rename',{old_name:old,new_name:nn}).then(function(d){closeRename();if(d.success){toast(d.message);refetch()}else{toast(d.message)}})}
+function closeRename(){document.getElementById('renameOverlay').classList.remove('show');renameId=null}
+
+/* delete */
+function deleteNode(id){var n=flatMap[id];if(n.level===1)return toast('学科不可删除');if(n.shared)return toast('共享库节点只读');
+ if(!confirm('确认删除「'+n.name+'」？将级联删除其全部子节点。'))return;
+ del('/api/knowledge-points/node/'+id).then(function(d){toast(d.message);checked.delete(id);if(selId===id)selId=null;refetch()})}
+
+/* move */
+var moveId=null;
+function openMove(id){moveId=id;var n=flatMap[id];var sel=document.getElementById('moveTarget');sel.innerHTML='';
+ function walk(ns){ns.forEach(function(c){if(c.level<n.level&&!isDescendant(c.id,id)){var o=document.createElement('option');o.value=c.id;o.textContent=' '.repeat(c.level)+c.name;sel.appendChild(o)}if(c.children)walk(c.children)})}
+ walk(treeData);new bootstrap.Modal(document.getElementById('moveModal')).show()}
+function isDescendant(a,of){if(a===of)return true;var n=flatMap[a];while(n&&n.parent_id){if(n.parent_id===of)return true;n=flatMap[n.parent_id]}return false}
+document.getElementById('moveOk').onclick=function(){var tid=+document.getElementById('moveTarget').value;if(!tid)return;
+ post('/api/knowledge-points/move',{node_id:moveId,new_parent_id:tid}).then(function(d){bootstrap.Modal.getInstance(document.getElementById('moveModal')).hide();
+  if(d.success){toast(d.message);expanded.add(tid);refetch()}else{toast(d.message)}})}
+
+/* merge */
+function openMerge(){var ids=[].concat(Array.from(checked));if(ids.length<2)return toast('请至少勾选两个知识点');
+ var target=prompt('合并到哪个知识点？（输入目标知识点名称）');if(!target||!target.trim())return;target=target.trim();
+ var sources=ids.map(function(i){return flatMap[i].name}).filter(function(n){return n!==target});
+ if(!sources.length)return toast('目标不能是源之一');
+ if(!confirm('确认将 '+sources.length+' 个知识点合并到「'+target+'」？'))return;
+ post('/api/knowledge-points/merge',{sources:sources,target:target}).then(function(d){if(d.success){toast(d.message);checked.clear();updateSelInfo();refetch()}else{toast(d.message)}})}
+
+/* bulk delete */
+function bulkDelete(){var ids=[].concat(Array.from(checked));if(!ids.length)return;
+ if(!confirm('确认批量删除 '+ids.length+' 个知识点及其子节点？这是不可逆操作！'))return;
+ var q=Promise.resolve();ids.forEach(function(i){q=q.then(function(){return del('/api/knowledge-points/node/'+i)})});
+ q.then(function(){toast('已批量删除');checked.clear();updateSelInfo();refetch()})}
+
+/* ===== helpers ===== */
+function masteryColor(rate,has){if(!has)return'#8b949e';if(rate<40)return'#e5534b';if(rate<=75)return'#f0a020';return'#2da44e'}
+function hl(t){if(!searchQ)return esc(t);var i=t.toLowerCase().indexOf(searchQ);if(i<0)return esc(t);return esc(t.slice(0,i))+'<mark>'+esc(t.slice(i,i+searchQ.length))+'</mark>'+esc(t.slice(i+searchQ.length))}
+function esc(s){return(s||'').replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
+function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(function(){t.classList.remove('show')},2000)}
+function updateSelInfo(){var n=checked.size;var info=document.getElementById('selInfo');info.style.display=n?'inline-block':'none';info.textContent='已选 '+n+' 项';
+ document.getElementById('btnMerge').disabled=n<2;document.getElementById('btnBulk').disabled=n<1}
+function renderAll(){renderTree();renderDetail();updateSelInfo()}
+
+/* ===== events ===== */
+document.getElementById('searchInput').addEventListener('input',function(){searchQ=this.value.trim();renderAll()});
+document.getElementById('xuekeFilter').addEventListener('change',function(){xuekeF=this.value;fetchTree()});
+document.getElementById('btnAdd').onclick=function(){var name=prompt('请输入新知识点的名称：');if(!name||!name.trim())return;name=name.trim();
+ if(/[/；;]/.test(name)){toast('名称不能含 / ; 分隔符');return}
+ var body={name:name,parent_id:selId||null,mode:selId?'child':undefined};
+ if(!selId){delete body.parent_id;delete body.mode}
+ post('/api/knowledge-points/node',body).then(function(d){if(d.success){toast(d.message);if(selId)expanded.add(selId);refetch()}else{toast(d.message)}})}
+document.getElementById('btnMerge').onclick=openMerge;
+document.getElementById('btnBulk').onclick=bulkDelete;
+document.addEventListener('keydown',function(e){if(e.key==='Escape'){document.getElementById('ctxMenu').style.display='none';closeRename()}});
+
+/* ===== init ===== */
+fetchTree(function(){if(treeData.length)selId=treeData[0].id;renderTree();renderDetail()});
+})();
+</script>
+{% endblock %}

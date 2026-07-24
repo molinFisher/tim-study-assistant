@@ -18,6 +18,11 @@ function submitReview(mistakeId, result) {
     const notesEl = document.getElementById('review-notes-' + mistakeId);
     const notes = notesEl ? notesEl.value : '';
 
+    // 禁用所有按钮，防止重复提交
+    var card = document.getElementById('review-card-' + mistakeId);
+    var btns = card ? card.querySelectorAll('button') : [];
+    btns.forEach(function(b){b.disabled=true;});
+
     fetch('/api/review/' + mistakeId + '/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -26,7 +31,6 @@ function submitReview(mistakeId, result) {
     .then(res => res.json())
     .then(data => {
         if (data.success) {
-            const card = document.getElementById('review-card-' + mistakeId);
             if (card) {
                 card.style.transition = 'transform 0.4s ease, opacity 0.4s ease';
                 card.style.transform = 'translateX(120px)';
@@ -43,9 +47,14 @@ function submitReview(mistakeId, result) {
             reviewStartTime2 = Date.now();
         } else {
             alert('提交失败: ' + (data.message || '未知错误'));
+            // 失败时恢复按钮
+            btns.forEach(function(b){b.disabled=false;});
         }
     })
-    .catch(err => { console.error('复习提交错误:', err); alert('网络错误'); });
+    .catch(err => { console.error('复习提交错误:', err); alert('网络错误');
+        // 失败时恢复按钮
+        btns.forEach(function(b){b.disabled=false;});
+    });
 }
 
 function showReviewComplete() {

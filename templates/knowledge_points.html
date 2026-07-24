@@ -61,6 +61,7 @@
     </form>
 </div>
 
+<div id="kp-list-container">
 {% if kps %}
 <div class="table-responsive">
     <table class="table table-hover" id="kp-table">
@@ -120,8 +121,20 @@
 {% endif %}
 
 <!-- 分页导航（保留筛选条件） -->
-{% if kps and total_pages > 1 %}
-<nav aria-label="知识点分页" class="mt-3">
+{% if kps and (total_pages > 1 or total_count > per_page) %}
+<div class="d-flex justify-content-between align-items-center mt-3">
+    <div class="text-muted small">共 {{ total_count }} 个知识点，第 {{ page }} / {{ total_pages }} 页</div>
+    <div class="d-flex align-items-center gap-2">
+        <span class="text-muted small">每页</span>
+        <select class="form-select form-select-sm" style="width:auto" onchange="location.href='{{ url_for('knowledge_points', page=1, per_page='__PP__', xueke=xueke_filter, days=days_filter, status=status_filter, sort=sort) }}'.replace('__PP__', this.value)">
+            {% for n in [10, 20, 50, 100] %}
+            <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</div>
+{% if total_pages > 1 %}
+<nav aria-label="知识点分页">
     <ul class="pagination pagination-sm justify-content-center mb-1">
         <li class="page-item {% if page <= 1 %}disabled{% endif %}">
             <a class="page-link" href="{{ url_for('knowledge_points', page=page-1, per_page=per_page, xueke=xueke_filter, days=days_filter, status=status_filter, sort=sort) }}">上一页</a>
@@ -141,9 +154,8 @@
     </ul>
 </nav>
 {% endif %}
-{% if kps %}
-<div class="text-center text-muted small mb-2">共 {{ total_count }} 个知识点，第 {{ page }} / {{ total_pages }} 页</div>
 {% endif %}
+</div>
 
 <!-- 新增知识点弹窗 -->
 <div class="modal fade" id="addKpModal" tabindex="-1">
@@ -156,15 +168,22 @@
             <div class="modal-body">
                 <div class="mb-3">
                     <label class="form-label fw-bold">知识点名称 <span class="text-danger">*</span></label>
-                    <input type="text" id="new-kp-name" class="form-control" placeholder="例如：一元二次方程">
+                    <input type="text" id="new-kp-name" class="form-control" placeholder="例如：一元二次方程" oninput="validateNewKp()">
+                    <small class="text-muted d-block mt-1" id="new-kp-hint"></small>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label fw-bold">所属学科</label>
-                    <select id="new-kp-xueke" class="form-select">
-                        <option value="">不限</option>
+                    <label class="form-label fw-bold">所属学科 <span class="text-danger">*</span></label>
+                    <select id="new-kp-xueke" class="form-select" onchange="loadChapters()">
+                        <option value="">请选择</option>
                         {% for s in subjects %}
                         <option value="{{ s }}">{{ s }}</option>
                         {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">所属章节 <span class="text-muted small">(可选)</span></label>
+                    <select id="new-kp-chapter" class="form-select">
+                        <option value="">不指定（直接挂在学科下）</option>
                     </select>
                 </div>
             </div>
@@ -202,21 +221,28 @@
 
 <!-- 合并确认弹窗 -->
 <div class="modal fade" id="mergeKpModal" tabindex="-1">
-    <div class="modal-dialog modal-sm">
+    <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-intersect"></i> 合并知识点</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>已选中 <strong id="merge-source-count">0</strong> 个知识点，请选择合并到：</p>
-                <select id="merge-target" class="form-select">
+                <p class="mb-2">将 <strong id="merge-source-count">0</strong> 个源知识点合并到：</p>
+                <select id="merge-target" class="form-select mb-3">
                     <option value="">-- 选择目标知识点 --</option>
                 </select>
+                <!-- 影响预览区 -->
+                <div id="merge-preview" class="border rounded p-2 bg-light small" style="display:none; max-height:200px; overflow-y:auto;">
+                    <div class="fw-bold mb-1">📊 影响预览</div>
+                    <div id="merge-preview-detail"></div>
+                    <hr class="my-1">
+                    <div id="merge-preview-summary" class="text-danger fw-bold"></div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-warning" onclick="doMerge()">确认合并</button>
+                <button type="button" class="btn btn-warning" id="merge-confirm-btn" onclick="doMerge()" disabled>确认合并</button>
             </div>
         </div>
     </div>
@@ -235,6 +261,28 @@ function filterKps() {
     });
 }
 
+// AJAX 局部刷新知识点列表（合并/重命名后使用）
+function refreshKnowledgeList() {
+    var container = document.getElementById('kp-list-container');
+    if (!container) { location.reload(); return; }
+    container.style.opacity = '0.4';
+    // 使用当前页的筛选参数
+    var params = new URLSearchParams(window.location.search);
+    params.set('fragment', '1');
+    fetch('/knowledge-points?' + params.toString())
+        .then(r => r.text())
+        .then(html => {
+            container.innerHTML = html;
+            container.style.opacity = '1';
+            // 重新绑定事件
+            document.getElementById('merge-btn').disabled = true;
+            var selAll = document.getElementById('kp-select-all');
+            if (selAll) selAll.checked = false;
+        }).catch(function() {
+            location.reload();
+        });
+}
+
 // 全选
 function toggleAllKps(master) {
     document.querySelectorAll('.kp-cb').forEach(function(cb) { cb.checked = master.checked; });
@@ -249,15 +297,49 @@ function updateMergeBtn() {
     document.getElementById('merge-btn').textContent = cnt >= 2 ? '合并选中(' + cnt + ')' : '合并选中';
 }
 
-// 新增知识点
+// 新增知识点：章节随学科联动
+function loadChapters() {
+    var xueke = document.getElementById('new-kp-xueke').value;
+    var sel = document.getElementById('new-kp-chapter');
+    sel.innerHTML = '<option value="">不指定（直接挂在学科下）</option>';
+    if (!xueke) return;
+    fetch('/api/knowledge-points/tree?scope=all&xueke=' + encodeURIComponent(xueke))
+        .then(r => r.json()).then(d => {
+            if (!d.success || !d.tree) return;
+            var subj = d.tree.find(function (s) { return s.name === xueke; });
+            if (!subj || !subj.children) return;
+            subj.children.forEach(function (ch) {
+                if (ch.level === 2) {
+                    var opt = document.createElement('option');
+                    opt.value = ch.name; opt.textContent = ch.name;
+                    sel.appendChild(opt);
+                }
+            });
+        });
+}
+// 命名校验（与重命名一致：禁止 / ； ;）
+function validateNewKp() {
+    var name = document.getElementById('new-kp-name').value.trim();
+    var el = document.getElementById('new-kp-hint');
+    if (!name) { el.textContent = ''; return true; }
+    if (/[/；;]/.test(name)) {
+        el.innerHTML = '<span class="text-danger">名称不能包含 / 或 ; 分隔符</span>';
+        return false;
+    }
+    el.textContent = '将在知识树中创建该节点';
+    return true;
+}
 function addKp() {
     var name = document.getElementById('new-kp-name').value.trim();
     var xueke = document.getElementById('new-kp-xueke').value;
+    var chapter = document.getElementById('new-kp-chapter').value;
     if (!name) { alert('请输入知识点名称'); return; }
+    if (!xueke) { alert('请选择所属学科'); return; }
+    if (!validateNewKp()) { alert('名称不能包含 / 或 ; 分隔符'); return; }
     fetch('/api/knowledge-points/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-        body: JSON.stringify({ name: name, xueke: xueke })
+        body: JSON.stringify({ name: name, xueke: xueke, chapter: chapter })
     }).then(r => r.json()).then(d => {
         alert(d.message);
         if (d.success) location.reload();
@@ -324,8 +406,65 @@ function startMerge() {
         sel.appendChild(opt);
     });
 
+    // 重置预览区
+    document.getElementById('merge-preview').style.display = 'none';
+    document.getElementById('merge-confirm-btn').disabled = true;
+
+    // 目标变化时加载预览
+    sel.onchange = function() {
+        var target = sel.value;
+        var sources = [];
+        checked.forEach(function(cb) { if (cb.dataset.name !== target) sources.push(cb.dataset.name); });
+        if (!target || sources.length === 0) {
+            document.getElementById('merge-preview').style.display = 'none';
+            document.getElementById('merge-confirm-btn').disabled = true;
+            return;
+        }
+        loadMergePreview(sources, target);
+    };
+
     new bootstrap.Modal(document.getElementById('mergeKpModal')).show();
 }
+
+function loadMergePreview(sources, target) {
+    var previewDiv = document.getElementById('merge-preview');
+    var detailDiv = document.getElementById('merge-preview-detail');
+    var summaryDiv = document.getElementById('merge-preview-summary');
+    previewDiv.style.display = 'block';
+    detailDiv.innerHTML = '<div class="text-center py-2"><span class="spinner-border spinner-border-sm"></span> 加载中...</div>';
+    summaryDiv.textContent = '';
+
+    fetch('/api/knowledge-points/merge/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ sources: sources, target: target })
+    }).then(r => r.json()).then(d => {
+        if (!d.success) {
+            detailDiv.innerHTML = '<span class="text-danger">预览失败: ' + (d.message || '未知错误') + '</span>';
+            return;
+        }
+        var html = '<table class="table table-sm table-borderless mb-0"><tbody>';
+        d.preview.forEach(function(p) {
+            html += '<tr><td class="text-nowrap">' + escapeHtml(p.source) + '</td>';
+            html += '<td class="text-end">错题 ' + p.mistake_count + '</td>';
+            html += '<td class="text-end">计划 ' + p.plan_count + '</td>';
+            html += '<td class="text-end">节点 ' + p.node_count + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        detailDiv.innerHTML = html;
+        summaryDiv.textContent = '共计 ' + d.total_mistakes + ' 道错题、' + d.total_plans + ' 个学习计划、' + d.total_nodes + ' 个知识树节点将被迁移到「' + escapeHtml(target) + '」';
+        document.getElementById('merge-confirm-btn').disabled = false;
+    }).catch(function(e) {
+        detailDiv.innerHTML = '<span class="text-danger">加载失败: ' + e + '</span>';
+    });
+}
+
+function escapeHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
 function doMerge() {
     var target = document.getElementById('merge-target').value;
     if (!target) { alert('请选择合并到的目标知识点'); return; }
@@ -333,18 +472,25 @@ function doMerge() {
     var sources = [];
     checked.forEach(function(cb) { if (cb.dataset.name !== target) sources.push(cb.dataset.name); });
     if (sources.length === 0) { alert('没有可合并的知识点'); return; }
-    if (!confirm('确定将 ' + sources.length + ' 个知识点合并到「' + target + '」？\n\n这将把源知识点下的所有错题归入目标知识点。')) return;
 
-    var done = 0, total = sources.length;
-    sources.forEach(function(src) {
-        fetch('/api/knowledge-points/merge', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-            body: JSON.stringify({ source: src, target: target })
-        }).then(r => r.json()).then(d => {
-            done++;
-            if (done >= total) { alert('合并完成！'); location.reload(); }
-        });
+    var btn = document.getElementById('merge-confirm-btn');
+    btn.disabled = true;
+    btn.textContent = '合并中...';
+
+    // 批量提交（后端一次性处理全部源，最终重算掌握率）
+    fetch('/api/knowledge-points/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ sources: sources, target: target })
+    }).then(r => r.json()).then(d => {
+        if (d.success) {
+            // 局部刷新：重新加载列表 + 思维导图
+            refreshKnowledgeList();
+        } else {
+            alert(d.message || '合并失败');
+            btn.disabled = false;
+            btn.textContent = '确认合并';
+        }
     });
 }
 </script>

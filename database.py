@@ -9,8 +9,11 @@ from config import Config
 
 def get_db():
     """获取数据库连接"""
-    conn = sqlite3.connect(Config.DATABASE_PATH, timeout=5)
+    # timeout 同时是 SQLite 的 busy_timeout：写锁被占用时等待而非立即报错，
+    # 使「实时服务 + 测试 / 并发访问」能安全共存（WAL 下写串行，等待即可）。
+    conn = sqlite3.connect(Config.DATABASE_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
     return conn
@@ -295,10 +298,17 @@ def rows_to_dicts(rows):
     """将 sqlite3.Row 列表转为 dict 列表"""
     return [dict(r) for r in rows]
 
-def query_db(query, args=(), one=False):
-    """通用查询（自动过滤 mistake_records 中已删除的数据）"""
-    if 'mistake_records' in query and 'WHERE 1=1' in query:
-        query = query.replace('WHERE 1=1', "WHERE status != 'deleted'")
+def query_db(query, args=(), one=False, exclude_deleted=True):
+    """通用查询。
+    
+    Args:
+        query: SQL 查询语句（使用 ? 占位符）
+        args: 查询参数元组
+        one: 是否只返回单条记录
+        exclude_deleted: 是否自动过滤 status='deleted' 的记录。
+            仅当 query 包含 'mistake_records' 且不含显式 status 条件时生效。
+            设为 False 可查询已删除数据。
+    """
     conn = get_db()
     cur = conn.execute(query, args)
     rv = cur.fetchall()

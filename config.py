@@ -32,7 +32,12 @@ class Config:
     SECONDS_PER_DAY = 86400
 
     # Flask 配置
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'tim-study-2024-secret-change-me')
+    _raw_key = os.environ.get('SECRET_KEY', '')
+    if not _raw_key:
+        # 开发环境允许默认值，但打印警告
+        _raw_key = 'tim-study-dev-key-not-for-production'
+        print("⚠️  未设置 SECRET_KEY 环境变量，使用开发默认值（生产环境务必设置！）")
+    SECRET_KEY = _raw_key
     TEMPLATES_AUTO_RELOAD = True
 
     # Cookie 配置
@@ -44,7 +49,7 @@ class Config:
 
     # 复习算法默认配置
     DEFAULT_REVIEW_ALGORITHM = 'sm2'
-    DEFAULT_DAILY_REVIEW_LIMIT = 20
+    DEFAULT_DAILY_REVIEW_LIMIT = 0   # 0 表示不限制
 
     # SM-2 间隔配置（阶段 → 天数）
     SM2_INTERVALS = {

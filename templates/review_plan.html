@@ -17,10 +17,18 @@
 <!-- 复习状态 -->
 <div class="row g-3 mb-4">
     <div class="col-md-4">
+        <div class="card stat-card primary">
+            <div class="card-body text-center">
+                <div class="stat-value" id="total-count">{{ total_due_today }}</div>
+                <div class="stat-label">今日全部题目</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
         <div class="card stat-card warning">
             <div class="card-body text-center">
                 <div class="stat-value" id="remaining-count">{{ due_reviews|length }}</div>
-                <div class="stat-label">今日待复习</div>
+                <div class="stat-label">待复习</div>
             </div>
         </div>
     </div>
@@ -28,15 +36,7 @@
         <div class="card stat-card success">
             <div class="card-body text-center">
                 <div class="stat-value" id="reviewed-count">{{ reviewed_today }}</div>
-                <div class="stat-label">今日已完成</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card stat-card primary">
-            <div class="card-body text-center">
-                <div class="stat-value">{{ 'SM-2' if review_algorithm == 'sm2' else '艾宾浩斯' }}</div>
-                <div class="stat-label">当前算法</div>
+                <div class="stat-label">已复习</div>
             </div>
         </div>
     </div>
@@ -185,30 +185,6 @@
     {% endif %}
 </div>
 
-<!-- 复习日历热力图 -->
-<div class="card mt-4">
-    <div class="card-header">
-        <h6 class="mb-0"><i class="bi bi-calendar-heat"></i> 最近 60 天复习活跃度</h6>
-    </div>
-    <div class="card-body">
-        <div class="calendar-heatmap">
-            {% for day, count in calendar_data.items() %}
-            <div class="calendar-day {% if count >= 4 %}level-4{% elif count >= 3 %}level-3{% elif count >= 2 %}level-2{% elif count >= 1 %}level-1{% endif %}"
-                 title="{{ day }}: {{ count }} 次复习"></div>
-            {% endfor %}
-        </div>
-        <div class="d-flex justify-content-end align-items-center gap-1 mt-2">
-            <small class="text-muted">少</small>
-            <div class="calendar-day" style="width: 12px; height: 12px;"></div>
-            <div class="calendar-day level-1" style="width: 12px; height: 12px;"></div>
-            <div class="calendar-day level-2" style="width: 12px; height: 12px;"></div>
-            <div class="calendar-day level-3" style="width: 12px; height: 12px;"></div>
-            <div class="calendar-day level-4" style="width: 12px; height: 12px;"></div>
-            <small class="text-muted">多</small>
-        </div>
-    </div>
-</div>
-
 <!-- 复习设置弹窗 -->
 <div class="modal fade" id="configModal" tabindex="-1">
     <div class="modal-dialog">
@@ -235,8 +211,8 @@
                     <div class="mb-3">
                         <label class="form-label fw-bold">每日复习上限</label>
                         <input type="number" name="daily_limit" class="form-control"
-                               value="{{ user_config['daily_review_limit'] }}" min="5" max="100">
-                        <small class="text-muted">超过上限的错题将顺延至明天复习</small>
+                               value="{{ user_config['daily_review_limit'] }}" min="0" max="999">
+                        <small class="text-muted">设 0 表示不限制，每日复习全部待复习错题</small>
                     </div>
                 </div>
                 <div class="modal-footer">

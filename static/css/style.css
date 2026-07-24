@@ -182,21 +182,21 @@ main {
     gap: 3px;
 }
 
-.calendar-day {
+.calendar-heatmap .calendar-day {
     aspect-ratio: 1;
     border-radius: 4px;
     background-color: #ebedf0;
     transition: transform 0.1s;
 }
 
-.calendar-day:hover {
+.calendar-heatmap .calendar-day:hover {
     transform: scale(1.2);
 }
 
-.calendar-day.level-1 { background-color: #9be9a8; }
-.calendar-day.level-2 { background-color: #40c463; }
-.calendar-day.level-3 { background-color: #30a14e; }
-.calendar-day.level-4 { background-color: #216e39; }
+.calendar-heatmap .calendar-day.level-1 { background-color: #9be9a8; }
+.calendar-heatmap .calendar-day.level-2 { background-color: #40c463; }
+.calendar-heatmap .calendar-day.level-3 { background-color: #30a14e; }
+.calendar-heatmap .calendar-day.level-4 { background-color: #216e39; }
 
 /* 图片上传预览 */
 .image-preview-container {
@@ -312,6 +312,27 @@ main {
 [data-bs-theme="dark"] .list-group-item { background: #16213e; border-color: #0f3460; color: #e0e0e0; }
 [data-bs-theme="dark"] .calendar-day { background: #16213e; border-color: #0f3460; }
 [data-bs-theme="dark"] .calendar-day.today { background: #1a3a6e; }
+[data-bs-theme="dark"] .calendar-heatmap .calendar-day { background-color: #2a2a3a; }
+[data-bs-theme="dark"] .calendar-heatmap .calendar-day.level-1 { background-color: #0e4429; }
+[data-bs-theme="dark"] .calendar-heatmap .calendar-day.level-2 { background-color: #006d32; }
+[data-bs-theme="dark"] .calendar-heatmap .calendar-day.level-3 { background-color: #26a641; }
+[data-bs-theme="dark"] .calendar-heatmap .calendar-day.level-4 { background-color: #39d353; }
+
+/* 暗色模式 — 知识徽章 */
+[data-bs-theme="dark"] .knowledge-badge { background: #1a3a6e; color: #90caf9; }
+
+/* 暗色模式 — 表格表头 */
+[data-bs-theme="dark"] .table th { background: #0f3460; color: #e0e0e0; }
+
+/* 暗色模式 — 学习计划日历 */
+[data-bs-theme="dark"] .calendar-header { background: #0f3460; color: #aaa; }
+[data-bs-theme="dark"] .calendar-day.empty { background: #1a1a2e; }
+[data-bs-theme="dark"] .calendar-day .day-num { color: #ccc; }
+[data-bs-theme="dark"] .calendar-day.today .day-num { color: #90caf9; }
+[data-bs-theme="dark"] .calendar-day .day-review-stat { background: rgba(255,255,255,.05); color: #aaa; }
+[data-bs-theme="dark"] .calendar-day.review-done .day-review-stat { background: #1b3a1b; color: #4caf50; }
+[data-bs-theme="dark"] .calendar-day.review-pending .day-review-stat { background: #3e3520; color: #ffc107; }
+[data-bs-theme="dark"] .day-plan-item { color: #ccc; }
 [data-bs-theme="dark"] .modal-content { background: #16213e; color: #e0e0e0; }
 [data-bs-theme="dark"] .text-dark { color: #e0e0e0 !important; }
 [data-bs-theme="dark"] .btn-outline-primary { color: #90caf9; border-color: #90caf9; }
@@ -399,21 +420,25 @@ main {
 
     /* 日历移动端 */
     .calendar-day {
-        min-height: 50px;
-        padding: 2px 3px;
+        min-height: 56px;
+        padding: 3px 4px;
     }
     .calendar-day .day-num {
-        font-size: 0.7rem;
+        font-size: 0.78rem;
+    }
+    .calendar-day .day-review-stat {
+        font-size: 9px;
+        padding: 1px 4px;
     }
     .day-plan-item {
-        font-size: 0.55rem;
+        font-size: 0.58rem;
     }
     .calendar-day.empty {
         display: none;
     }
     .calendar-header {
-        font-size: 0.65rem;
-        padding: 3px 0;
+        font-size: 0.72rem;
+        padding: 4px 0;
     }
 
     /* 概览卡片 */
@@ -473,49 +498,88 @@ main {
 .calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 2px;
+    gap: 3px;
 }
 .calendar-header {
     text-align: center;
-    font-size: 0.8rem;
-    font-weight: bold;
-    padding: 6px 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 8px 0;
     background: #f1f3f5;
     border-radius: 4px;
+    color: #6c757d;
 }
 .calendar-day {
     min-height: 80px;
     border: 1px solid #eee;
-    border-radius: 6px;
-    padding: 4px 6px;
+    border-radius: 8px;
+    padding: 6px 8px;
     background: #fff;
-    transition: background 0.2s;
+    transition: background 0.2s, box-shadow 0.2s;
+    display: flex;
+    flex-direction: column;
+}
+.calendar-day:hover {
+    box-shadow: 0 1px 6px rgba(0,0,0,.08);
+    border-color: #d0d7de;
 }
 .calendar-day.empty {
     background: #fafafa;
     border-color: transparent;
 }
 .calendar-day.today {
-    background: #e3f2fd;
-    border-color: #2196f3;
+    background: #e8f4fd;
+    border-color: #90caf9;
+    box-shadow: 0 0 0 1px #90caf9;
 }
 .calendar-day .day-num {
-    font-size: 0.85rem;
-    font-weight: bold;
-    color: #555;
-    margin-bottom: 2px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #444;
+    line-height: 1.2;
+}
+.calendar-day.today .day-num {
+    color: #1565c0;
+}
+.calendar-day .day-review-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: #666;
+    margin: 2px 0 4px;
+    line-height: 1.2;
+    padding: 2px 7px;
+    border-radius: 10px;
+    background: rgba(0,0,0,.03);
+    width: fit-content;
+}
+.calendar-day.review-done .day-review-stat {
+    background: #d4edda;
+    color: #155724;
+}
+.calendar-day.review-pending .day-review-stat {
+    background: #fff3cd;
+    color: #856404;
+}
+.calendar-day .day-review-stat .done-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #2da44e; flex-shrink: 0;
 }
 .calendar-day .day-plans {
     display: flex;
     flex-direction: column;
     gap: 1px;
+    margin-top: auto;
 }
 .day-plan-item {
-    font-size: 0.65rem;
+    font-size: 0.7rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     cursor: default;
+    border-radius: 3px;
+    padding: 2px 5px;
 }
 
 /* ========== 复习记录时间线 ========== */
@@ -566,20 +630,20 @@ a .stat-card-clickable:hover {
 }
 
 /* Dark mode 复习记录 */
-body.dark .review-record-item:hover {
+[data-bs-theme="dark"] .review-record-item:hover {
     background: #2a2d3a;
     border-color: #3a3d4a;
 }
-body.dark .review-record-title {
+[data-bs-theme="dark"] .review-record-title {
     color: #e0e0e0;
 }
-body.dark .review-day-dot {
+[data-bs-theme="dark"] .review-day-dot {
     background: #7c8cf8;
 }
-body.dark .review-day-items {
+[data-bs-theme="dark"] .review-day-items {
     border-left-color: #3a3d4a;
 }
-body.dark .review-day-header .badge.bg-light {
+[data-bs-theme="dark"] .review-day-header .badge.bg-light {
     background: #2a2d3a !important;
     color: #ccc !important;
 }
@@ -609,7 +673,7 @@ body.dark .review-day-header .badge.bg-light {
 .action-btns .btn-link.text-primary:hover { background: rgba(13,110,253,.1); border-radius: 6px; }
 .action-btns .btn-link.text-secondary:hover { background: rgba(108,117,125,.1); border-radius: 6px; }
 .action-btns .btn-link.text-danger:hover { background: rgba(220,53,69,.1); border-radius: 6px; }
-body.dark .action-btns .btn-link { opacity: 0.85; }
-body.dark .action-btns .btn-link.text-primary:hover { background: rgba(100,150,255,.2); }
-body.dark .action-btns .btn-link.text-secondary:hover { background: rgba(150,150,150,.2); }
-body.dark .action-btns .btn-link.text-danger:hover { background: rgba(255,100,100,.2); }
+[data-bs-theme="dark"] .action-btns .btn-link { opacity: 0.85; }
+[data-bs-theme="dark"] .action-btns .btn-link.text-primary:hover { background: rgba(100,150,255,.2); }
+[data-bs-theme="dark"] .action-btns .btn-link.text-secondary:hover { background: rgba(150,150,150,.2); }
+[data-bs-theme="dark"] .action-btns .btn-link.text-danger:hover { background: rgba(255,100,100,.2); }

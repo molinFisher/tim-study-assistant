@@ -25,9 +25,13 @@
                 <div class="calendar-day empty"></div>
                 {% else %}
                 {% set ds = '%s-%s-%s'|format(month.split('-')[0], month.split('-')[1], '%02d'|format(d)) %}
-                <div class="calendar-day {% if d == today.day and month == today_month %}today{% endif %}"
+                {% set rv = cal_review.get(ds, {}) %}
+                <div class="calendar-day {% if d == today.day and month == today_month %}today{% endif %}{% if rv.total and rv.done >= rv.total %} review-done{% elif rv.total and rv.done < rv.total %} review-pending{% endif %}"
                      onclick="quickAddPlan('{{ ds }}')" title="点击空白处创建当日计划" style="cursor:pointer">
                     <div class="day-num">{{ d }}</div>
+                    {% if rv.done or rv.total %}
+                    <div class="day-review-stat"><span class="done-dot"></span> {{ rv.done }}/{{ rv.total }}</div>
+                    {% endif %}
                     {% if calendar.get(ds) %}
                     <div class="day-plans">
                         {% for p in calendar[ds][:6] %}
@@ -237,12 +241,17 @@ function loadKnowledgePoints(xueke, listId) {
 }
 
 // AJAX 局部刷新计划列表
-function loadPlans(page) {
+function loadPlans(page, perPage) {
     page = page || 1;
+    if (!perPage) {
+        var sel = document.querySelector('.per-page-select');
+        perPage = sel ? sel.value : 12;
+    }
     var form = document.getElementById('plan-filter-form') || document.querySelector('#plans-container form');
     var params = new URLSearchParams();
     params.set('month', currentMonth);
     params.set('page', page);
+    params.set('per_page', perPage);
     if (form) {
         var s = form.querySelector('[name="status"]'); if (s && s.value) params.set('status', s.value);
         var x = form.querySelector('[name="xueke"]'); if (x && x.value) params.set('xueke', x.value);

@@ -135,8 +135,19 @@
     {% endif %}
 </div>
 
+<div class="d-flex justify-content-between align-items-center mt-3">
+    <div class="text-muted small">共 {{ total }} 条{% if total_pages > 1 %}，第 {{ page }}/{{ total_pages }} 页{% endif %}</div>
+    <div class="d-flex align-items-center gap-2">
+        <span class="text-muted small">每页</span>
+        <select class="form-select form-select-sm per-page-select" style="width:auto" onchange="loadPlans(1, this.value)" {% if total <= per_page and total_pages <= 1 %}disabled{% endif %}>
+            {% for n in [10, 20, 50, 100] %}
+            <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</div>
 {% if total_pages > 1 %}
-<nav class="mt-4"><ul class="pagination pagination-sm justify-content-center">
+<nav><ul class="pagination pagination-sm justify-content-center">
     {% for p in range(1, total_pages + 1) %}
     <li class="page-item {% if p == page %}active{% endif %}">
         <a class="page-link" href="javascript:loadPlans({{ p }})">{{ p }}</a>

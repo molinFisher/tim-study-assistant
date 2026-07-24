@@ -1,0 +1,23 @@
+# Tim 学习助手 - Python 依赖
+# 生成方式: pip freeze | grep -E "Flask|Jinja2|Werkzeug|MarkupSafe|itsdangerous|click|blinker|python-dotenv|Pillow|reportlab|fpdf2|Markdown|openpyxl|requests|beautifulsoup4|gunicorn"
+# 更新时间: 2026-07-23
+
+Flask==3.1.2
+Flask-CacheBuster==1.0.0
+flask-cors==6.0.2
+Flask-Login==0.6.3
+Jinja2==3.1.6
+Werkzeug==3.1.5
+MarkupSafe==3.0.3
+itsdangerous==2.2.0
+click==8.3.1
+blinker==1.9.0
+python-dotenv==1.2.1
+Pillow==12.1.0
+reportlab==4.4.9
+fpdf2==2.8.7
+Markdown==3.10.1
+openpyxl==3.1.5
+requests==2.32.5
+beautifulsoup4==4.14.3
+gunicorn>=22.0.0

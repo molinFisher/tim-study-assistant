@@ -1,0 +1,93 @@
+{% if kps %}
+<div class="table-responsive">
+    <table class="table table-hover" id="kp-table">
+        <thead>
+            <tr>
+                <th style="width:40px"><input type="checkbox" id="kp-select-all" onchange="toggleAllKps(this)"></th>
+                <th>知识点</th>
+                <th class="text-center">总题数</th>
+                <th class="text-center">活跃</th>
+                <th class="text-center">已掌握</th>
+                <th style="min-width:120px">掌握率</th>
+                <th style="width:120px">操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for kp in kps %}
+            <tr class="kp-row" data-name="{{ kp['zhishidian'] }}">
+                <td><input type="checkbox" class="kp-cb" value="{{ kp['zhishidian'] }}" data-name="{{ kp['zhishidian'] }}"></td>
+                <td>
+                    <a href="{{ url_for('question_list', zhishidian=kp['zhishidian']) }}" class="text-decoration-none fw-bold">
+                        <span class="knowledge-badge fs-6">{{ kp['zhishidian'] }}</span>
+                    </a>
+                </td>
+                <td class="text-center fw-bold">{{ kp['total'] }}</td>
+                <td class="text-center">{{ kp['active_count'] }}</td>
+                <td class="text-center text-success fw-bold">{{ kp['mastered_count'] }}</td>
+                <td>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="progress flex-grow-1" style="height:8px">
+                            {% set pct = (kp['mastered_count'] / kp['total'] * 100) if kp['total'] > 0 else 0 %}
+                            <div class="progress-bar {% if pct < 30 %}bg-danger{% elif pct < 70 %}bg-warning{% else %}bg-success{% endif %}"
+                                 style="width:{{ pct|int }}%"></div>
+                        </div>
+                        <small class="text-muted" style="min-width:35px">{{ pct|int }}%</small>
+                    </div>
+                </td>
+                <td>
+                    <button class="btn btn-outline-secondary btn-sm py-0 px-1" title="重命名"
+                            onclick="renameKp('{{ kp['zhishidian']|e }}')">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="text-center py-5">
+    <i class="bi bi-tags" style="font-size: 4rem; color: #ccc;"></i>
+    <h4 class="text-muted mt-3">还没有知识点</h4>
+    <p class="text-muted">添加错题时输入知识点标签，这里会自动汇总统计</p>
+    <a href="{{ url_for('add_question') }}" class="btn btn-primary">
+        <i class="bi bi-plus-lg"></i> 去添加错题
+    </a>
+</div>
+{% endif %}
+
+<!-- 分页导航（保留筛选条件） -->
+{% if kps and (total_pages > 1 or total_count > per_page) %}
+<div class="d-flex justify-content-between align-items-center mt-3">
+    <div class="text-muted small">共 {{ total_count }} 个知识点，第 {{ page }} / {{ total_pages }} 页</div>
+    <div class="d-flex align-items-center gap-2">
+        <span class="text-muted small">每页</span>
+        <select class="form-select form-select-sm" style="width:auto" onchange="location.href='{{ url_for('knowledge_points', page=1, per_page='__PP__', xueke=xueke_filter, days=days_filter, status=status_filter, sort=sort) }}'.replace('__PP__', this.value)">
+            {% for n in [10, 20, 50, 100] %}
+            <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</div>
+{% if total_pages > 1 %}
+<nav aria-label="知识点分页">
+    <ul class="pagination pagination-sm justify-content-center mb-1">
+        <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('knowledge_points', page=page-1, per_page=per_page, xueke=xueke_filter, days=days_filter, status=status_filter, sort=sort) }}">上一页</a>
+        </li>
+        {% for p in range(1, total_pages + 1) %}
+            {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+                <li class="page-item {% if p == page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('knowledge_points', page=p, per_page=per_page, xueke=xueke_filter, days=days_filter, status=status_filter, sort=sort) }}">{{ p }}</a>
+                </li>
+            {% elif p == page - 3 or p == page + 3 %}
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('knowledge_points', page=page+1, per_page=per_page, xueke=xueke_filter, days=days_filter, status=status_filter, sort=sort) }}">下一页</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+{% endif %}
