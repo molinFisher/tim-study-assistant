@@ -106,6 +106,7 @@
         .then(data => {
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-trash"></i> 批量删除'; }
             if (data.success) {
+                // 即时从 DOM 移除已删行，给出快速反馈
                 ids.forEach(qid => {
                     const cb = document.querySelector('.row-select[value="' + qid + '"]');
                     if (cb) { const tr = cb.closest('tr'); if (tr) tr.remove(); }
@@ -114,6 +115,8 @@
                 updateToolbar();
                 if (document.querySelectorAll('.row-select').length === 0 && selectAll) selectAll.style.display = 'none';
                 alert('成功删除 ' + data.deleted + ' 道错题');
+                // 重新加载，刷新分页控件、总条数与越界页码（删除整页后自动回退）
+                location.reload();
             } else {
                 alert('删除失败: ' + (data.message || '未知错误'));
             }

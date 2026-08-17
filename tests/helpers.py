@@ -82,7 +82,9 @@ def csrf_token():
     t = S.cookies.get("csrf_token", "")
     if not t:
         r = S.get(f"{BASE}/questions", allow_redirects=False)
-        m = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', r.text)
+        # base.html 使用 <meta name="csrf-token" content="...">（连字符 + content 属性），
+        # 同时兼容旧式 name="csrf_token" value="..." 写法
+        m = re.search(r'name="csrf[-_]token"[^>]*?(?:content|value)="([^"]+)"', r.text)
         if m:
             t = m.group(1)
     _CSRF_CACHE = t

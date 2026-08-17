@@ -378,6 +378,13 @@ def question_list():
         params, one=True
     )['cnt']
 
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    # 钳制页码：批量删除后当前页可能已无数据（越界），自动落到最后一页，
+    # 避免停留在不存在的分页（如第 5 页删空后还显示第 5 页空白）。
+    if page > total_pages:
+        page = total_pages
+    offset = (page - 1) * per_page
+
     # 分页
     questions = query_db(
         f'''SELECT * FROM mistake_records WHERE {where_sql}
@@ -385,8 +392,6 @@ def question_list():
             LIMIT ? OFFSET ?''',
         params + [per_page, offset]
     )
-
-    total_pages = max(1, (total + per_page - 1) // per_page)
 
     # 为每个问题生成纯文本摘要（去掉 LaTeX 标记）
     questions = rows_to_dicts(questions)
